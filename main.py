@@ -123,14 +123,47 @@ async def get_ai_response(query: str) -> str:
         return await get_web_response(query)
 
 async def search_images(query: str) -> List[str]:
-    from duckduckgo_search import DDGS
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.images(query, max_results=5))
-        return [r["image"] for r in results if r.get("image")]
-    except Exception as e:
-        logger.error(f"Image search error: {e}")
-        return []
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as c:
+        try:
+            r = await c.get("https://en.wikipedia.org/w/api.php", params={
+                "action": "opensearch", "search": query, "limit": 5, "format": "json",
+            })
+            titles = r.json()[1] if len(r.json()) > 1 else []
+        except Exception:
+            titles = []
+
+        urls = []
+        for title in titles:
+            try:
+                r = await c.get("https://en.wikipedia.org/w/api.php", params={
+                    "action": "query", "prop": "pageimages", "pithumbsize": 600,
+                    "titles": title, "format": "json",
+                })
+                pages = r.json().get("query", {}).get("pages", {})
+                for pid, page in pages.items():
+                    if pid != "-1" and "thumbnail" in page:
+                        urls.append(page["thumbnail"]["source"])
+                        if len(urls) >= 3:
+                            return urls
+            except Exception:
+                continue
+
+        if len(urls) < 3:
+            try:
+                r = await c.get("https://commons.wikimedia.org/w/api.php", params={
+                    "action": "query", "list": "search", "srsearch": query,
+                    "srnamespace": "6", "srlimit": 5, "format": "json",
+                })
+                for item in r.json().get("query", {}).get("search", []):
+                    title = item["title"].replace(" ", "_")
+                    urls.append(f"https://commons.wikimedia.org/wiki/Special:FilePath/{title}")
+                    if len(urls) >= 3:
+                        break
+            except Exception:
+                pass
+
+        return urls[:3]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_user = await context.bot.get_me()
