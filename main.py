@@ -1,6 +1,9 @@
 import os
 import re
+import time
 import logging
+import threading
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import List
 
 from dotenv import load_dotenv
@@ -224,11 +227,29 @@ async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, format, *args):
+        pass
+
+def run_health_server():
+    port = int(os.getenv("PORT", 10000))
+    server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
+    logger.info(f"Health server listening on port {port}")
+    server.serve_forever()
+
 def main():
     token = os.getenv("TELEGRAM_TOKEN")
     if not token:
         logger.critical("TELEGRAM_TOKEN not set in .env!")
         return
+
+    t = threading.Thread(target=run_health_server, daemon=True)
+    t.start()
+    time.sleep(1)
 
     app = Application.builder().token(token).build()
 
