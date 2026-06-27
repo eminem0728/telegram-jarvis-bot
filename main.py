@@ -248,7 +248,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
         name = get_user_name(reply_user.id)
         if name:
-            await msg.reply_text(f"Это **{name}**.")
+            await msg.reply_text(f"Это {name}.")
         else:
             first = reply_user.first_name or ""
             last = reply_user.last_name or ""
@@ -289,9 +289,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = await get_ai_response(query, user_name)
         for i in range(0, len(response), 4000):
             part = response[i : i + 4000]
-            await msg.reply_text(
-                part, parse_mode="Markdown", disable_web_page_preview=True
-            )
+            try:
+                await msg.reply_text(part, parse_mode="Markdown", disable_web_page_preview=True)
+            except Exception:
+                await msg.reply_text(part, disable_web_page_preview=True)
 
 async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = update.my_chat_member
