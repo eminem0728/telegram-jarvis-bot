@@ -47,7 +47,7 @@ KNOWN_USERS = {
     5700390653: {"name": "Шындаулет", "username": "Qwerto_t", "type": "guy"},
     5859344398: {"name": "Алишер", "username": "Alisherrrrrrrrr", "type": "guy"},
     7485059711: {"name": "Амир", "username": "AMIRAS_S", "type": "guy"},
-    6784808056: {"name": "Санжар", "username": "spdy_sp", "type": "guy"},
+    6784808056: {"name": "Мирас", "username": "spdy_sp", "type": "guy"},
 }
 
 SPDY_SP_ID = 6784808056
