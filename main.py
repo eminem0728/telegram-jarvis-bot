@@ -244,6 +244,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
+
     if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
         name = get_user_name(reply_user.id)
         if name:
@@ -253,6 +254,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             last = reply_user.last_name or ""
             await msg.reply_text(f"Я не знаю этого человека. Его зовут {first} {last}.".strip())
         return
+
+    if reply_user and reply_user.id == OWNER_ID and user.id != OWNER_ID:
+        if re.search(r"(?i)не слушай|не прав|заткнись|завали|не согласен|неправильно|чушь|брехня|ерунда|фигня|не тупи", query):
+            await msg.reply_text("Иди нахуй, сэра не трогай. Сказал же, не слушай — сам иди нахуй.")
+            return
 
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action="typing"
