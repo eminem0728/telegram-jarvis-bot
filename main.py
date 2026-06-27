@@ -158,6 +158,7 @@ def get_user_by_username(username: str):
     return None, None
 
 chat_history: dict = {}
+owner_chats: dict = {}
 
 def add_to_history(chat_id: int, role: str, content: str):
     if chat_id not in chat_history:
@@ -398,6 +399,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("Этот бот только для сэра.")
         return
 
+    if not is_private:
+        now = time.time()
+        if chat.id not in owner_chats or now - owner_chats[chat.id] > 600:
+            try:
+                member = await context.bot.get_chat_member(chat.id, OWNER_ID)
+                if member.status in ("member", "administrator", "creator"):
+                    owner_chats[chat.id] = now
+                else:
+                    owner_chats[chat.id] = 0
+            except Exception:
+                owner_chats[chat.id] = 0
+        if not owner_chats.get(chat.id):
+            return
+
     is_mentioned = "джарвис" in text_lower or (
         bot_username and f"@{bot_username.lower()}" in text_lower
     )
@@ -535,6 +550,18 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("Этот бот только для сэра.")
         return
     if not is_private:
+        now = time.time()
+        if chat.id not in owner_chats or now - owner_chats[chat.id] > 600:
+            try:
+                member = await context.bot.get_chat_member(chat.id, OWNER_ID)
+                if member.status in ("member", "administrator", "creator"):
+                    owner_chats[chat.id] = now
+                else:
+                    owner_chats[chat.id] = 0
+            except Exception:
+                owner_chats[chat.id] = 0
+        if not owner_chats.get(chat.id):
+            return
         replied = msg.reply_to_message
         if not replied or replied.from_user.id != context.bot.id:
             return
