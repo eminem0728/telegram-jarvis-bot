@@ -124,7 +124,8 @@ async def get_ai_response(query: str) -> str:
 
 async def search_images(query: str) -> List[str]:
     import httpx
-    async with httpx.AsyncClient(timeout=15) as c:
+    headers = {"User-Agent": "JarvisTelegramBot/1.0 (https://github.com/eminem0728/telegram-jarvis-bot)"}
+    async with httpx.AsyncClient(timeout=15, headers=headers) as c:
         for api in ["ru.wikipedia.org", "en.wikipedia.org"]:
             try:
                 r = await c.get(f"https://{api}/w/api.php", params={
