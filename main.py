@@ -523,7 +523,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     is_private = chat.type == "private"
     if not is_private:
-        return
+        replied = msg.reply_to_message
+        if not replied or replied.from_user.id != context.bot.id:
+            return
 
     user = msg.from_user
     await msg.reply_text("🎤 Слушаю...")
