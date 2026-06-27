@@ -568,17 +568,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("Не расслышал. Повтори.")
         return
 
-    user_info = get_user_info(user.id)
-    chat_id = update.effective_chat.id
-    add_to_history(chat_id, "user", text)
-    response = await get_ai_response(text, user_info.get("name"), user_info.get("type"), chat_id)
-    add_to_history(chat_id, "assistant", response)
-    for i in range(0, len(response), 4000):
-        part = response[i:i + 4000]
-        try:
-            await msg.reply_text(part, parse_mode="Markdown", disable_web_page_preview=True)
-        except Exception:
-            await msg.reply_text(part, disable_web_page_preview=True)
+    if text.lower().startswith("джарвис"):
+        clean_query = re.sub(r"(?i)^джарвис[,!\s]*", "", text).strip() or text
+        user_info = get_user_info(user.id)
+        chat_id = update.effective_chat.id
+        add_to_history(chat_id, "user", clean_query)
+        response = await get_ai_response(clean_query, user_info.get("name"), user_info.get("type"), chat_id)
+        add_to_history(chat_id, "assistant", response)
+        for i in range(0, len(response), 4000):
+            part = response[i:i + 4000]
+            try:
+                await msg.reply_text(part, parse_mode="Markdown", disable_web_page_preview=True)
+            except Exception:
+                await msg.reply_text(part, disable_web_page_preview=True)
+    else:
+        await msg.reply_text(text)
 
 def _cleanup_files(*paths):
     for p in paths:
