@@ -25,6 +25,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENCODE_ZEN_API_KEY = os.getenv("OPENCODE_ZEN_API_KEY")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "openai")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 IMAGE_KEYWORDS = [
     "покажи", "как выглядит", "фото", "изображение", "картинка",
@@ -73,9 +74,61 @@ def save_extra_users():
     }}
     with open(EXTRA_USERS_FILE, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+    if GITHUB_TOKEN:
+        try:
+            import httpx
+            content = json.dumps(data, indent=2, ensure_ascii=False)
+            resp = httpx.put(
+                "https://api.github.com/repos/eminem0728/telegram-jarvis-bot/contents/extra_users.json",
+                headers={
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github.v3+json",
+                },
+                json={
+                    "message": "update extra_users.json",
+                    "content": content.encode("utf-8").hex(),
+                    "sha": _get_github_sha(),
+                },
+                timeout=10,
+            )
+            if resp.status_code == 422:
+                resp = httpx.put(
+                    "https://api.github.com/repos/eminem0728/telegram-jarvis-bot/contents/extra_users.json",
+                    headers={
+                        "Authorization": f"Bearer {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github.v3+json",
+                    },
+                    json={
+                        "message": "create extra_users.json",
+                        "content": content.encode("utf-8").hex(),
+                    },
+                    timeout=10,
+                )
+            logger.info(f"GitHub save: {resp.status_code}")
+        except Exception as e:
+            logger.error(f"GitHub save error: {e}")
 
-def learn_user(username: str, name: str):
+def _get_github_sha():
+    try:
+        import httpx
+        resp = httpx.get(
+            "https://api.github.com/repos/eminem0728/telegram-jarvis-bot/contents/extra_users.json",
+            headers={
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()["sha"]
+    except Exception:
+        pass
+    return None
+
+def learn_user(username: str, name: str, user_id: int = None):
     global USERNAME_MAP
+    if user_id and user_id != OWNER_ID:
+        return None
     username_clean = username.lstrip("@").lower()
     for uid, info in KNOWN_USERS.items():
         if info["username"].lower() == username_clean:
@@ -307,9 +360,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     learn_match = re.search(r"(?i)(?:запомни\s+)?@(\w+)\s+это\s+(.+)", query)
     if learn_match:
+        if user.id != OWNER_ID:
+            await msg.reply_text("Только сэр может менять имена.")
+            return
         uname = learn_match.group(1)
         uname_name = learn_match.group(2).strip().rstrip(".!")
-        learned = learn_user(uname, uname_name)
+        learned = learn_user(uname, uname_name, user.id)
         await msg.reply_text(f"Запомнил: @{uname} — это {learned}.")
         return
 
