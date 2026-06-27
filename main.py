@@ -244,10 +244,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if user.id == SPDY_SP_ID:
-        await msg.reply_text("иди нахуй пидр")
-        return
-
     reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
 
     if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
@@ -262,7 +258,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if reply_user and reply_user.id == OWNER_ID and user.id != OWNER_ID:
         if re.search(r"(?i)не слушай|не прав|заткнись|завали|не согласен|неправильно|чушь|брехня|ерунда|фигня|не тупи", query):
-            await msg.reply_text("Иди нахуй, сэра не трогай. Сказал же, не слушай — сам иди нахуй.")
+            reply = "иди нахуй пидр" if user.id == SPDY_SP_ID else "Иди нахуй, сэра не трогай."
+            await msg.reply_text(reply)
             return
 
     await context.bot.send_chat_action(
