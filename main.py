@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import time
 import logging
 import threading
@@ -45,8 +46,47 @@ KNOWN_USERS = {
 }
 
 SPDY_SP_ID = 6784808056
+EXTRA_USERS_FILE = "extra_users.json"
+
+def load_extra_users():
+    if os.path.exists(EXTRA_USERS_FILE):
+        try:
+            with open(EXTRA_USERS_FILE) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+extra_users = load_extra_users()
+next_id = max(KNOWN_USERS.keys(), default=0) + 1
+for uid_str, info in extra_users.items():
+    uid = int(uid_str)
+    KNOWN_USERS[uid] = info
+    next_id = max(next_id, uid + 1)
 
 USERNAME_MAP = {data["username"].lower(): uid for uid, data in KNOWN_USERS.items()}
+
+def save_extra_users():
+    data = {str(uid): info for uid, info in KNOWN_USERS.items() if uid not in {
+        5039153833, 5036884265, 2001476363, 1570550583, 5093297548,
+        5700390653, 5859344398, 7485059711, 6784808056,
+    }}
+    with open(EXTRA_USERS_FILE, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+def learn_user(username: str, name: str):
+    global USERNAME_MAP
+    username_clean = username.lstrip("@").lower()
+    for uid, info in KNOWN_USERS.items():
+        if info["username"].lower() == username_clean:
+            info["name"] = name
+            save_extra_users()
+            return name
+    uid = max(KNOWN_USERS.keys(), default=0) + 1
+    KNOWN_USERS[uid] = {"name": name, "username": username_clean, "type": "guy"}
+    USERNAME_MAP[username_clean] = uid
+    save_extra_users()
+    return name
 
 def get_user_info(user_id: int) -> dict:
     return KNOWN_USERS.get(user_id, {})
@@ -263,6 +303,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Это {name}.")
         else:
             await msg.reply_text(f"Я не знаю человека с юзернеймом @{mention.group(1)}.")
+        return
+
+    learn_match = re.search(r"(?i)(?:запомни\s+)?@(\w+)\s+это\s+(.+)", query)
+    if learn_match:
+        uname = learn_match.group(1)
+        uname_name = learn_match.group(2).strip().rstrip(".!")
+        learned = learn_user(uname, uname_name)
+        await msg.reply_text(f"Запомнил: @{uname} — это {learned}.")
         return
 
     if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
