@@ -47,7 +47,7 @@ KNOWN_USERS = {
     5700390653: {"name": "Шындаулет", "username": "Qwerto_t", "type": "guy"},
     5859344398: {"name": "Алишер", "username": "Alisherrrrrrrrr", "type": "guy"},
     7485059711: {"name": "Амир", "username": "AMIRAS_S", "type": "guy"},
-    6784808056: {"name": "Пидарас", "username": "spdy_sp", "type": "asshole"},
+    6784808056: {"name": "Санжар", "username": "spdy_sp", "type": "guy"},
 }
 
 SPDY_SP_ID = 6784808056
@@ -487,7 +487,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if reply_user and reply_user.id == OWNER_ID and user.id != OWNER_ID:
         if re.search(r"(?i)не слушай|не прав|заткнись|завали|не согласен|неправильно|чушь|брехня|ерунда|фигня|не тупи", query):
-            reply = "иди нахуй пидр" if user.id == SPDY_SP_ID else "Иди нахуй, сэра не трогай."
+            await msg.reply_text("Иди нахуй, сэра не трогай.")
             await msg.reply_text(reply)
             return
 
