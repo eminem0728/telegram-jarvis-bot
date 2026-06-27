@@ -562,9 +562,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 owner_chats[chat.id] = 0
         if not owner_chats.get(chat.id):
             return
-        replied = msg.reply_to_message
-        if not replied or replied.from_user.id != context.bot.id:
-            return
 
     await msg.reply_text("🎤 Слушаю...")
 
