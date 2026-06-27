@@ -46,11 +46,19 @@ KNOWN_USERS = {
 
 SPDY_SP_ID = 6784808056
 
+USERNAME_MAP = {data["username"].lower(): uid for uid, data in KNOWN_USERS.items()}
+
 def get_user_info(user_id: int) -> dict:
     return KNOWN_USERS.get(user_id, {})
 
 def get_user_name(user_id: int) -> str:
     return KNOWN_USERS.get(user_id, {}).get("name")
+
+def get_user_by_username(username: str):
+    uid = USERNAME_MAP.get(username.lower().lstrip("@"))
+    if uid:
+        return uid, KNOWN_USERS[uid]["name"]
+    return None, None
 
 async def get_openai_response(query: str) -> str:
     import openai
@@ -247,6 +255,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
+
+    mention = re.search(r"@(\w+)", query)
+    if mention and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
+        _, name = get_user_by_username(mention.group(1))
+        if name:
+            await msg.reply_text(f"Это {name}.")
+            return
 
     if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
         name = get_user_name(reply_user.id)
