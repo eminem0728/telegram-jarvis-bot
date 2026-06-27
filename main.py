@@ -243,6 +243,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("иди нахуй пидр")
         return
 
+    reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
+    if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
+        name = get_user_name(reply_user.id)
+        if name:
+            await msg.reply_text(f"Это **{name}**.")
+        else:
+            first = reply_user.first_name or ""
+            last = reply_user.last_name or ""
+            await msg.reply_text(f"Я не знаю этого человека. Его зовут {first} {last}.".strip())
+        return
+
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action="typing"
     )
