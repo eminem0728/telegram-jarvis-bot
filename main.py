@@ -362,6 +362,10 @@ async def search_images(query: str) -> List[str]:
             return []
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if update.effective_chat.type == "private" and user.id != OWNER_ID:
+        await update.message.reply_text("Этот бот только для сэра. В группах я отвечаю всем, кто скажет «Джарвис».")
+        return
     bot_user = await context.bot.get_me()
     username = bot_user.username
     keyboard = InlineKeyboardMarkup([
@@ -390,6 +394,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_lower = text.lower()
 
     is_private = chat.type == "private"
+    if is_private and user.id != OWNER_ID:
+        await msg.reply_text("Этот бот только для сэра.")
+        return
+
     is_mentioned = "джарвис" in text_lower or (
         bot_username and f"@{bot_username.lower()}" in text_lower
     )
@@ -520,14 +528,17 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not msg.voice:
         return
 
+    user = msg.from_user
     chat = update.effective_chat
     is_private = chat.type == "private"
+    if is_private and user.id != OWNER_ID:
+        await msg.reply_text("Этот бот только для сэра.")
+        return
     if not is_private:
         replied = msg.reply_to_message
         if not replied or replied.from_user.id != context.bot.id:
             return
 
-    user = msg.from_user
     await msg.reply_text("🎤 Слушаю...")
 
     voice = msg.voice
