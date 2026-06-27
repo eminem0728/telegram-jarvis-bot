@@ -261,7 +261,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, name = get_user_by_username(mention.group(1))
         if name:
             await msg.reply_text(f"Это {name}.")
-            return
+        else:
+            await msg.reply_text(f"Я не знаю человека с юзернеймом @{mention.group(1)}.")
+        return
 
     if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
         name = get_user_name(reply_user.id)
