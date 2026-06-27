@@ -317,7 +317,7 @@ async def get_ai_response(query: str, user_name: str = None, user_type: str = No
 async def search_images(query: str) -> List[str]:
     import httpx
     headers = {"User-Agent": "JarvisTelegramBot/1.0 (https://github.com/eminem0728/telegram-jarvis-bot)"}
-    async with httpx.AsyncClient(timeout=15, headers=headers) as c:
+    async with httpx.AsyncClient(timeout=15, headers=headers, follow_redirects=True) as c:
         for api in ["ru.wikipedia.org", "en.wikipedia.org"]:
             try:
                 r = await c.get(f"https://{api}/w/api.php", params={
@@ -336,9 +336,15 @@ async def search_images(query: str) -> List[str]:
                     })
                     for pid, page in r.json().get("query", {}).get("pages", {}).items():
                         if pid != "-1" and "thumbnail" in page:
-                            urls.append(page["thumbnail"]["source"])
-                            if len(urls) >= 3:
-                                return urls
+                            url = page["thumbnail"]["source"]
+                            try:
+                                hr = await c.head(url, timeout=5)
+                                if "image" in hr.headers.get("content-type", ""):
+                                    urls.append(url)
+                                    if len(urls) >= 3:
+                                        return urls
+                            except Exception:
+                                pass
                 except Exception:
                     continue
 
@@ -348,13 +354,19 @@ async def search_images(query: str) -> List[str]:
         try:
             r = await c.get("https://commons.wikimedia.org/w/api.php", params={
                 "action": "query", "list": "search", "srsearch": query,
-                "srnamespace": "6", "srlimit": 5, "format": "json",
+                "srnamespace": "6", "srlimit": 10, "format": "json",
             })
             urls = []
             for item in r.json().get("query", {}).get("search", []):
-                urls.append(f"https://commons.wikimedia.org/wiki/Special:FilePath/{item['title'].replace(' ', '_')}")
-                if len(urls) >= 3:
-                    break
+                url = f"https://commons.wikimedia.org/wiki/Special:FilePath/{item['title'].replace(' ', '_')}"
+                try:
+                    hr = await c.head(url, timeout=5)
+                    if "image" in hr.headers.get("content-type", ""):
+                        urls.append(url)
+                        if len(urls) >= 3:
+                            return urls
+                except Exception:
+                    pass
             return urls
         except Exception:
             return []
@@ -519,7 +531,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 for i, url in enumerate(images[:5])
             ]
-            await msg.reply_media_group(media=media)
+            try:
+                await msg.reply_media_group(media=media)
+            except Exception:
+                await msg.reply_text(f"Не нашёл изображений по запросу '{query}'.")
         else:
             await msg.reply_text(f"Не нашёл изображений по запросу '{query}'.")
     else:
