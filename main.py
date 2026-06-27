@@ -589,7 +589,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with sr.AudioFile(wav_path) as source:
             audio = recognizer.record(source)
         text = await loop.run_in_executor(
-            None, lambda: recognizer.recognize_google(audio, language="ru-RU")
+            None, lambda: recognizer.recognize_google(audio, language="ru-RU,kk-KZ")
         )
     except sr.UnknownValueError:
         text = None
