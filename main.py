@@ -213,6 +213,27 @@ async def get_exchange_rate(code: str) -> str:
     except Exception:
         return "Ошибка при запросе курса."
 
+async def download_video(url: str) -> str | None:
+    import yt_dlp
+    tmp = tempfile.mktemp(suffix=".mp4")
+    try:
+        opts = {
+            "outtmpl": tmp,
+            "format": "best[filesize<50M]/best",
+            "max_filesize": 50_000_000,
+            "quiet": True,
+            "no_warnings": True,
+        }
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).download([url]))
+        if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+            return tmp
+        return None
+    except Exception as e:
+        logger.error(f"Download error: {e}")
+        _cleanup_files(tmp)
+        return None
+
 async def get_openai_response(query: str) -> str:
     import openai
     client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -490,7 +511,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if reply_user and reply_user.id == OWNER_ID and user.id != OWNER_ID:
         if re.search(r"(?i)не слушай|не прав|заткнись|завали|не согласен|неправильно|чушь|брехня|ерунда|фигня|не тупи", query):
             await msg.reply_text("Иди нахуй, сэра не трогай.")
-            await msg.reply_text(reply)
             return
 
     weather_match = re.search(r"(?i)(?:погода|температура)\s+(?:в|на|во)?\s*(.+)", query)
@@ -507,6 +527,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rate = await get_exchange_rate(code)
         await msg.reply_text(rate)
         return
+
+    if re.search(r"(?i)скачай", query):
+        replied = msg.reply_to_message
+        url = None
+        if replied and replied.text:
+            m = re.search(r"https?://[^\s]+", replied.text)
+            if m:
+                url = m.group()
+        if not url:
+            m = re.search(r"https?://[^\s]+", query)
+            if m:
+                url = m.group()
+        if url:
+            await msg.reply_text("⬇ Скачиваю...")
+            downloaded = await download_video(url)
+            if downloaded:
+                try:
+                    with open(downloaded, "rb") as f:
+                        await msg.reply_video(f)
+                except Exception as e:
+                    await msg.reply_text(f"Ошибка при отправке: {e}")
+                finally:
+                    _cleanup_files(downloaded)
+            else:
+                await msg.reply_text("Не удалось скачать видео.")
+            return
 
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action="typing"
