@@ -70,6 +70,7 @@ for uid_str, info in extra_users.items():
     next_id = max(next_id, uid + 1)
 
 USERNAME_MAP = {data["username"].lower(): uid for uid, data in KNOWN_USERS.items()}
+NAME_MAP = {data["name"].lower(): (uid, data["username"]) for uid, data in KNOWN_USERS.items()}
 
 def save_extra_users():
     data = {str(uid): info for uid, info in KNOWN_USERS.items() if uid not in {
@@ -130,18 +131,20 @@ def _get_github_sha():
     return None
 
 def learn_user(username: str, name: str, user_id: int = None):
-    global USERNAME_MAP
+    global USERNAME_MAP, NAME_MAP
     if user_id and user_id != OWNER_ID:
         return None
     username_clean = username.lstrip("@").lower()
     for uid, info in KNOWN_USERS.items():
         if info["username"].lower() == username_clean:
             info["name"] = name
+            NAME_MAP[name.lower()] = (uid, info["username"])
             save_extra_users()
             return name
     uid = max(KNOWN_USERS.keys(), default=0) + 1
     KNOWN_USERS[uid] = {"name": name, "username": username_clean, "type": "guy"}
     USERNAME_MAP[username_clean] = uid
+    NAME_MAP[name.lower()] = (uid, username_clean)
     save_extra_users()
     return name
 
@@ -477,6 +480,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Это {name}.")
         else:
             await msg.reply_text(f"Я не знаю человека с юзернеймом @{mention.group(1)}.")
+        return
+
+    def _resolve_name(name: str):
+        name = name.strip().lower().rstrip("ауыоеёияю")
+        for key, (uid, uname) in NAME_MAP.items():
+            if key.startswith(name) or name.startswith(key):
+                return uid, uname, key
+        return None
+
+    tag_match = re.search(r"(?i)(?:отметь|тегни|упомяни)\s+(.+)", query)
+    if tag_match:
+        found = _resolve_name(tag_match.group(1))
+        if found:
+            await msg.reply_text(f"@{found[1]}")
+        else:
+            await msg.reply_text(f"Я не знаю кто это.")
+        return
+
+    who_match = re.search(r"(?i)кто\s+(.+)", query)
+    if who_match and not re.search(r"(?i)это|такой|такая|такой", who_match.group(0)):
+        found = _resolve_name(who_match.group(1))
+        if found:
+            await msg.reply_text(f"Это {KNOWN_USERS[found[0]]['name']} — @{found[1]}.")
+        else:
+            await msg.reply_text(f"Я не знаю кто это.")
         return
 
     if re.search(r"(?i)\b(?:я твой хозяин|я твой создатель|я хозяин)\b", query):
