@@ -422,11 +422,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not owner_chats.get(chat.id):
             return
 
+    is_reply_to_bot = msg.reply_to_message and msg.reply_to_message.from_user.id == context.bot.id
+
     is_mentioned = "джарвис" in text_lower or (
         bot_username and f"@{bot_username.lower()}" in text_lower
     )
 
-    if not is_private and not is_mentioned:
+    if not is_private and not is_mentioned and not is_reply_to_bot:
         return
 
     query = text
