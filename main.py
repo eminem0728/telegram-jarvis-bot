@@ -215,22 +215,25 @@ async def get_exchange_rate(code: str) -> str:
 
 async def download_video(url: str) -> str | None:
     import yt_dlp
-    tmp = tempfile.mktemp(suffix=".mp4")
+    import glob
+    tmp_base = tempfile.mktemp()
     try:
         opts = {
-            "outtmpl": tmp,
+            "outtmpl": tmp_base + ".%(ext)s",
             "format": "best",
             "quiet": True,
             "no_warnings": True,
         }
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).download([url]))
-        if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
-            return tmp
+        matches = glob.glob(tmp_base + ".*")
+        if matches and os.path.getsize(matches[0]) > 0:
+            return matches[0]
         return None
     except Exception as e:
         logger.error(f"Download error: {e}")
-        _cleanup_files(tmp)
+        for f in glob.glob(tmp_base + ".*"):
+            _cleanup_files(f)
         return None
 
 async def get_openai_response(query: str) -> str:
@@ -539,18 +542,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if m:
                 url = m.group()
         if url:
-            await msg.reply_text("⬇ Скачиваю...")
+            status = await msg.reply_text("⬇ Скачиваю...")
             downloaded = await download_video(url)
             if downloaded:
                 try:
+                    ext = os.path.splitext(downloaded)[1].lower()
                     with open(downloaded, "rb") as f:
-                        await msg.reply_video(f)
+                        if ext in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+                            await msg.reply_photo(f, write_timeout=120)
+                        elif ext in (".mp4", ".webm", ".mov", ".avi", ".mkv"):
+                            await msg.reply_video(f, write_timeout=120)
+                        else:
+                            await msg.reply_document(f, write_timeout=120)
+                    await status.delete()
                 except Exception as e:
-                    await msg.reply_text(f"Ошибка при отправке: {e}")
+                    await status.edit_text(f"Ошибка: {e}")
                 finally:
                     _cleanup_files(downloaded)
             else:
-                await msg.reply_text("Не удалось скачать видео.")
+                await status.edit_text("Не удалось скачать.")
             return
 
     await context.bot.send_chat_action(
