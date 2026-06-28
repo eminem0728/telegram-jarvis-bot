@@ -640,13 +640,16 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text.lower().startswith("джарвис"):
         clean_query = re.sub(r"(?i)^джарвис[,!\s]*", "", text).strip() or text
-        await status_msg.edit_text(f"🎤 {text}")
         user_info = get_user_info(user.id)
         add_to_history(chat_id, "user", clean_query)
         response = await get_ai_response(clean_query, user_info.get("name"), user_info.get("type"), chat_id)
         add_to_history(chat_id, "assistant", response)
-        for i in range(0, len(response), 4000):
-            part = response[i:i + 4000]
+        parts = [response[i:i + 4000] for i in range(0, len(response), 4000)]
+        try:
+            await status_msg.edit_text(parts[0], parse_mode="Markdown", disable_web_page_preview=True)
+        except Exception:
+            await status_msg.edit_text(parts[0], disable_web_page_preview=True)
+        for part in parts[1:]:
             try:
                 await context.bot.send_message(chat_id=chat_id, text=part, parse_mode="Markdown", disable_web_page_preview=True)
             except Exception:
