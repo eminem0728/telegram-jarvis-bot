@@ -219,8 +219,7 @@ async def download_video(url: str) -> str | None:
     try:
         opts = {
             "outtmpl": tmp,
-            "format": "best[filesize<50M]/best",
-            "max_filesize": 50_000_000,
+            "format": "best",
             "quiet": True,
             "no_warnings": True,
         }
