@@ -618,7 +618,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = None
-    for lang in ("kk-KZ", "ru-RU"):
+    for lang in ("ru-RU",):
         try:
             text = await loop.run_in_executor(
                 None, lambda l=lang: recognizer.recognize_google(audio, language=l)
@@ -640,10 +640,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
+    chat_id = update.effective_chat.id
+
     if text.lower().startswith("джарвис"):
         clean_query = re.sub(r"(?i)^джарвис[,!\s]*", "", text).strip() or text
         user_info = get_user_info(user.id)
-        chat_id = update.effective_chat.id
         add_to_history(chat_id, "user", clean_query)
         response = await get_ai_response(clean_query, user_info.get("name"), user_info.get("type"), chat_id)
         add_to_history(chat_id, "assistant", response)
@@ -654,7 +655,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 await context.bot.send_message(chat_id=chat_id, text=part, disable_web_page_preview=True)
     else:
-        await msg.reply_text(text)
+        safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        await context.bot.send_message(chat_id=chat_id, text=f"<blockquote>{safe}</blockquote>", parse_mode="HTML")
 
 def _cleanup_files(*paths):
     for p in paths:
