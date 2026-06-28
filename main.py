@@ -650,9 +650,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i in range(0, len(response), 4000):
             part = response[i:i + 4000]
             try:
-                await msg.reply_text(part, parse_mode="Markdown", disable_web_page_preview=True)
+                await context.bot.send_message(chat_id=chat_id, text=part, parse_mode="Markdown", disable_web_page_preview=True)
             except Exception:
-                await msg.reply_text(part, disable_web_page_preview=True)
+                await context.bot.send_message(chat_id=chat_id, text=part, disable_web_page_preview=True)
     else:
         await msg.reply_text(text)
 
