@@ -220,7 +220,7 @@ async def download_video(url: str) -> str | None:
     try:
         opts = {
             "outtmpl": tmp_base + ".%(ext)s",
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best",
             "merge_output_format": "mp4",
             "quiet": True,
             "no_warnings": True,
