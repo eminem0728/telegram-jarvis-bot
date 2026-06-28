@@ -632,18 +632,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     _cleanup_files(ogg_path, wav_path)
 
-    try:
-        await status_msg.delete()
-    except Exception:
-        pass
-
     if not text:
+        await status_msg.edit_text("Не расслышал.")
         return
 
     chat_id = update.effective_chat.id
 
     if text.lower().startswith("джарвис"):
         clean_query = re.sub(r"(?i)^джарвис[,!\s]*", "", text).strip() or text
+        await status_msg.edit_text(f"🎤 {text}")
         user_info = get_user_info(user.id)
         add_to_history(chat_id, "user", clean_query)
         response = await get_ai_response(clean_query, user_info.get("name"), user_info.get("type"), chat_id)
@@ -656,7 +653,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=chat_id, text=part, disable_web_page_preview=True)
     else:
         safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        await context.bot.send_message(chat_id=chat_id, text=f"<blockquote>{safe}</blockquote>", parse_mode="HTML")
+        await status_msg.edit_text(f"<blockquote>{safe}</blockquote>", parse_mode="HTML")
 
 def _cleanup_files(*paths):
     for p in paths:
