@@ -611,14 +611,23 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         with sr.AudioFile(wav_path) as source:
             audio = recognizer.record(source)
-        text = await loop.run_in_executor(
-            None, lambda: recognizer.recognize_google(audio, language="ru-RU,kk-KZ")
-        )
-    except sr.UnknownValueError:
-        text = None
     except Exception as e:
-        logger.error(f"STT error: {e}")
-        text = None
+        logger.error(f"Audio read error: {e}")
+        _cleanup_files(ogg_path, wav_path)
+        return
+
+    text = None
+    for lang in ("kk-KZ", "ru-RU"):
+        try:
+            text = await loop.run_in_executor(
+                None, lambda l=lang: recognizer.recognize_google(audio, language=l)
+            )
+            break
+        except sr.UnknownValueError:
+            continue
+        except Exception as e:
+            logger.error(f"STT error ({lang}): {e}")
+            continue
 
     _cleanup_files(ogg_path, wav_path)
 
