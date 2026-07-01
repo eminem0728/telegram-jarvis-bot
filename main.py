@@ -162,16 +162,34 @@ def get_user_by_username(username: str):
 
 chat_history: dict = {}
 owner_chats: dict = {}
-departed_members: dict = {}  # chat_id -> {user_id: {"name":..., "time": ...}}
+departed_members: dict = {}
+MONITORED_CHATS_FILE = "monitored_chats.json"
+
+def load_monitored():
+    if os.path.exists(MONITORED_CHATS_FILE):
+        try:
+            with open(MONITORED_CHATS_FILE) as f:
+                return set(json.load(f))
+        except Exception:
+            return set()
+    return set()
+
+def save_monitored():
+    with open(MONITORED_CHATS_FILE, "w") as f:
+        json.dump(list(monitored_chats), f)
+
+monitored_chats = load_monitored()
 
 def add_to_history(chat_id: int, role: str, content: str):
     if chat_id not in chat_history:
         chat_history[chat_id] = []
     chat_history[chat_id].append({"role": role, "content": content, "time": time.time()})
-    cutoff = time.time() - 3600
+    is_monitored = chat_id in monitored_chats
+    cutoff = time.time() - (86400 if is_monitored else 3600)
     chat_history[chat_id] = [m for m in chat_history[chat_id] if m.get("time", 0) > cutoff]
-    if len(chat_history[chat_id]) > 200:
-        chat_history[chat_id] = chat_history[chat_id][-200:]
+    limit = 1000 if is_monitored else 200
+    if len(chat_history[chat_id]) > limit:
+        chat_history[chat_id] = chat_history[chat_id][-limit:]
 
 async def get_weather(city: str) -> str:
     import httpx
@@ -522,6 +540,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("Мой хозяин — Эмин (@eminem07281). Я слушаюсь только его.")
         return
 
+    if re.search(r"(?i)(?:следи|мониторь)\s+за\s+этой\s+группой", query):
+        if user.id == OWNER_ID and not is_private:
+            monitored_chats.add(chat.id)
+            save_monitored()
+            await msg.reply_text("Буду следить за этой группой 24/7.")
+        else:
+            await msg.reply_text("Только сэр может включить слежку.")
+        return
+
+    if re.search(r"(?i)(?:не следи|хватит|отстань)", query) and chat.id in monitored_chats:
+        if user.id == OWNER_ID:
+            monitored_chats.discard(chat.id)
+            save_monitored()
+            await msg.reply_text("Ок, больше не слежу.")
+        else:
+            await msg.reply_text("Только сэр может отключить.")
+        return
+
     learn_match = re.search(r"(?i)(?:запомни\s+)?@(\w+)\s+это\s+(.+)", query)
     if learn_match:
         if user.id != OWNER_ID:
@@ -553,7 +589,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if uid and chat.id in departed_members and uid in departed_members[chat.id]:
             dep_info = departed_members[chat.id][uid]
             leave_time = dep_info["time"]
-            recent = [m for m in chat_history.get(chat.id, []) if m.get("time", 0) >= leave_time - 300 and m.get("time", 0) <= leave_time]
+            window = 86400 if chat.id in monitored_chats else 300
+            recent = [m for m in chat_history.get(chat.id, []) if m.get("time", 0) >= leave_time - window and m.get("time", 0) <= leave_time]
             if recent:
                 ctx = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in recent[-20:])
                 prompt = f"Вот сообщения перед тем как {dep_info['name']} покинул чат. Кратко объясни почему он/она мог уйти, опираясь на сообщения. Без лишних слов:\n{ctx}"
