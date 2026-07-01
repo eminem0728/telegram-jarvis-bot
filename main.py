@@ -170,6 +170,7 @@ def get_user_by_username(username: str):
 chat_history: dict = {}
 owner_chats: dict = {}
 departed_members: dict = {}
+pending_names: dict = {}  # chat_id -> {"type": "username"/"id", "value": str}
 MONITORED_CHATS_FILE = "monitored_chats.json"
 
 def load_monitored():
@@ -494,10 +495,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query = re.sub(rf"@{bot_username}\s*", "", query, count=1, flags=re.IGNORECASE)
     query = query.strip()
 
+    if not query and is_private and user.id == OWNER_ID:
+        await msg.reply_text("Слушаю, сэр!")
+        return
+
+    if is_private and user.id == OWNER_ID and chat.id in pending_names and not is_mentioned:
+        info = pending_names.pop(chat.id)
+        if info["type"] == "username":
+            learned = learn_user(info["value"], query, caller_id=user.id)
+            await msg.reply_text(f"Запомнил: @{info['value']} — это {learned}.")
+        else:
+            learned = learn_user(None, query, caller_id=user.id, target_uid=int(info["value"]))
+            await msg.reply_text(f"Запомнил: {info['value']} — это {learned}.")
+        return
+
     if not query:
         await msg.reply_text(
             f"Слушаю, {msg.from_user.first_name}! Что вы хотите узнать?"
         )
+        return
+
+    single_mention = re.fullmatch(r"@(\w+)", query.strip())
+    if single_mention and is_private and user.id == OWNER_ID:
+        uname = single_mention.group(1)
+        _, name = get_user_by_username(uname)
+        if name:
+            await msg.reply_text(f"Это {name} (@{uname}).")
+        else:
+            pending_names[chat.id] = {"type": "username", "value": uname}
+            await msg.reply_text(f"Я не знаю @{uname}. Напиши его имя — я запомню.")
+        return
+
+    single_id = re.fullmatch(r"(\d{5,})", query.strip())
+    if single_id and is_private and user.id == OWNER_ID:
+        tid = int(single_id.group(1))
+        info = KNOWN_USERS.get(tid)
+        if info:
+            await msg.reply_text(f"Это {info['name']} (ID: {tid}).")
+        else:
+            pending_names[chat.id] = {"type": "id", "value": str(tid)}
+            await msg.reply_text(f"Я не знаю ID {tid}. Напиши его имя — я запомню.")
         return
 
     reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
