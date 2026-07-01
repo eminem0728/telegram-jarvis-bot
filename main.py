@@ -557,15 +557,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("Только сэр может включить слежку.")
         return
 
-    tag_job = re.search(r"(?i)(?:тегай|пинг|спами)\s+@(\w+)\s+каждые\s+(\d+)\s*(секунд|минут|час)", query)
+    tag_job = re.search(r"(?i)(?:тегай|пинг|спами)\s+@(\w+)\s+каждые\s+(\d+)\s*(секунд|минут|час)(?:\s+(\d+)\s*(?:раз|раза|разов?))?", query)
     if tag_job and user.id == OWNER_ID:
         uname = tag_job.group(1)
         amount = int(tag_job.group(2))
         unit = tag_job.group(3).lower()
         interval = amount * {"секунд": 1, "минут": 60, "час": 3600}.get(unit, 60)
-        job_data = {"chat_id": chat.id, "username": uname}
+        count = int(tag_job.group(4)) if tag_job.group(4) else None
+        job_data = {"chat_id": chat.id, "username": uname, "count": count, "current": 0}
         context.job_queue.run_repeating(_tag_job_callback, interval=interval, data=job_data, name=f"tag_{chat.id}_{uname}")
-        await msg.reply_text(f"Буду тегать @{uname} каждые {amount} {unit}.")
+        msg_text = f"Буду тегать @{uname} каждые {amount} {unit}."
+        if count:
+            msg_text = f"Буду тегать @{uname} {count} раз(а) каждые {amount} {unit}."
+        await msg.reply_text(msg_text)
         return
 
     if re.search(r"(?i)(?:хватит|прекрати|стоп|отстань)\s*(?:тегать|пинг|спамить)", query) and user.id == OWNER_ID:
@@ -866,6 +870,10 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def _tag_job_callback(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     data = job.data
+    if data.get("count"):
+        data["current"] += 1
+        if data["current"] >= data["count"]:
+            job.schedule_removal()
     await context.bot.send_message(chat_id=data["chat_id"], text=f"@{data['username']}")
 
 async def track_member_changes(update: Update, context: ContextTypes.DEFAULT_TYPE):
