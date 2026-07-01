@@ -610,6 +610,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Я не заметил когда {leave_match.group(1)} вышел.")
         return
 
+    if re.search(r"(?i)\b(?:заткнись|замолчи|не слушай|молчать|тихо)\b", query) and not reply_user:
+        if user.id == OWNER_ID:
+            await msg.reply_text("Молчу, сэр.")
+        else:
+            await msg.reply_text("Ты мне не указ.")
+        return
+
     if reply_user and reply_user.id == OWNER_ID and user.id != OWNER_ID:
         if re.search(r"(?i)не слушай|не прав|заткнись|завали|не согласен|неправильно|чушь|брехня|ерунда|фигня|не тупи", query):
             await msg.reply_text("Иди нахуй, сэра не трогай.")
