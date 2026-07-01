@@ -162,13 +162,16 @@ def get_user_by_username(username: str):
 
 chat_history: dict = {}
 owner_chats: dict = {}
+departed_members: dict = {}  # chat_id -> {user_id: {"name":..., "time": ...}}
 
 def add_to_history(chat_id: int, role: str, content: str):
     if chat_id not in chat_history:
         chat_history[chat_id] = []
-    chat_history[chat_id].append({"role": role, "content": content})
-    if len(chat_history[chat_id]) > 20:
-        chat_history[chat_id] = chat_history[chat_id][-20:]
+    chat_history[chat_id].append({"role": role, "content": content, "time": time.time()})
+    cutoff = time.time() - 3600
+    chat_history[chat_id] = [m for m in chat_history[chat_id] if m.get("time", 0) > cutoff]
+    if len(chat_history[chat_id]) > 200:
+        chat_history[chat_id] = chat_history[chat_id][-200:]
 
 async def get_weather(city: str) -> str:
     import httpx
@@ -540,6 +543,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Я не знаю этого человека. Его зовут {first} {last}.".strip())
         return
 
+    leave_match = re.search(r"(?i)почему\s+(.+?)\s+(вышел|вышла|ушёл|ушла|покинул)(?:\s|$|\.)", query)
+    if leave_match:
+        name_query = leave_match.group(1).strip().lower().rstrip("ауыоеёияю ")
+        uid = None
+        for uid_candidate, info in KNOWN_USERS.items():
+            key = info["name"].lower().rstrip("ауыоеёияю ")
+            if key == name_query or name_query.startswith(key) or key.startswith(name_query):
+                uid = uid_candidate
+                break
+        if uid and chat.id in departed_members and uid in departed_members[chat.id]:
+            dep_info = departed_members[chat.id][uid]
+            leave_time = dep_info["time"]
+            recent = [m for m in chat_history.get(chat.id, []) if m.get("time", 0) >= leave_time - 300 and m.get("time", 0) <= leave_time]
+            if recent:
+                ctx = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in recent[-20:])
+                prompt = f"Вот сообщения перед тем как {dep_info['name']} покинул чат. Кратко объясни почему он/она мог уйти, опираясь на сообщения. Без лишних слов:\n{ctx}"
+                resp = await get_ai_response(prompt, user_name="анализ", chat_id=None)
+                await msg.reply_text(resp[:2000])
+            else:
+                await msg.reply_text(f"Не знаю, не вижу ссоры перед выходом {dep_info['name']}.")
+        else:
+            await msg.reply_text(f"Я не заметил когда {leave_match.group(1)} вышел.")
+        return
+
     if reply_user and reply_user.id == OWNER_ID and user.id != OWNER_ID:
         if re.search(r"(?i)не слушай|не прав|заткнись|завали|не согласен|неправильно|чушь|брехня|ерунда|фигня|не тупи", query):
             await msg.reply_text("Иди нахуй, сэра не трогай.")
@@ -764,6 +791,21 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"👋 Привет, {member.first_name}! Добро пожаловать в чат. Я — {BOT_NAME}, если нужна помощь — просто скажи «Джарвис»."
         )
 
+async def track_member_changes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mc = update.chat_member
+    if not mc:
+        return
+    chat_id = mc.chat.id
+    user = mc.new_chat_member.user
+    old = mc.old_chat_member.status
+    new = mc.new_chat_member.status
+    if old in ("member", "administrator", "creator") and new in ("left", "kicked"):
+        info = KNOWN_USERS.get(user.id, {})
+        name = info.get("name") or user.full_name or user.first_name or user.username or str(user.id)
+        if chat_id not in departed_members:
+            departed_members[chat_id] = {}
+        departed_members[chat_id][user.id] = {"name": name, "time": time.time()}
+
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
@@ -798,6 +840,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
+    app.add_handler(ChatMemberHandler(track_member_changes, ChatMemberHandler.ANY_CHAT_MEMBER))
     app.add_error_handler(error_handler)
 
     logger.info(f"{BOT_NAME} bot started!")
