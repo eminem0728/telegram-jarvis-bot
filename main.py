@@ -11,7 +11,7 @@ from typing import List
 
 from dotenv import load_dotenv
 from telegram import Update, InputMediaPhoto, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, ChatMemberHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, ChatMemberHandler, CallbackQueryHandler, filters, ContextTypes
 from pydub import AudioSegment
 import speech_recognition as sr
 
@@ -170,7 +170,26 @@ def get_user_by_username(username: str):
 chat_history: dict = {}
 owner_chats: dict = {}
 departed_members: dict = {}
-pending_names: dict = {}  # chat_id -> {"type": "username"/"id", "value": str}
+pending_names: dict = {}
+bot_groups: dict = {}  # chat_id -> chat_title
+group_users: dict = {}  # chat_id -> {uid: {"name": ..., "username": ...}}
+group_flow: dict = {}  # user_id -> {"step": ..., "group_id": ...}
+GROUP_USERS_FILE = "group_users.json"
+
+def load_group_users():
+    if os.path.exists(GROUP_USERS_FILE):
+        try:
+            with open(GROUP_USERS_FILE) as f:
+                return {int(k): v for k, v in json.load(f).items()}
+        except Exception:
+            return {}
+    return {}
+
+def save_group_users():
+    with open(GROUP_USERS_FILE, "w") as f:
+        json.dump({str(k): v for k, v in group_users.items()}, f, indent=2, ensure_ascii=False)
+
+group_users = load_group_users()
 MONITORED_CHATS_FILE = "monitored_chats.json"
 
 def load_monitored():
@@ -515,7 +534,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
+
     single_mention = re.fullmatch(r"@(\w+)", query.strip())
+    single_id = re.fullmatch(r"(\d{5,})", query.strip())
+
+    if is_private and user.id == OWNER_ID and user.id in group_flow:
+        flow = group_flow[user.id]
+        if flow["step"] == "awaiting_id":
+            if single_mention:
+                flow["target_type"] = "username"
+                flow["target_val"] = single_mention.group(1)
+                flow["step"] = "awaiting_name"
+                await msg.reply_text("Теперь напиши имя:")
+            elif single_id:
+                flow["target_type"] = "id"
+                flow["target_val"] = single_id.group(1)
+                flow["step"] = "awaiting_name"
+                await msg.reply_text("Теперь напиши имя:")
+            else:
+                await msg.reply_text("Нужен @username или ID.")
+            return
+        if flow["step"] == "awaiting_name":
+            gid = flow["group_id"]
+            name = query.strip()
+            if gid not in group_users:
+                group_users[gid] = {}
+            if flow["target_type"] == "username":
+                uid = max(group_users[gid].keys(), default=0) + 1000000
+                group_users[gid][uid] = {"name": name, "username": flow["target_val"]}
+            else:
+                uid = int(flow["target_val"])
+                group_users[gid][uid] = {"name": name, "username": str(uid)}
+            save_group_users()
+            del group_flow[user.id]
+            await msg.reply_text(f"Запомнил {name} в этой группе.")
+            return
+
     if single_mention and is_private and user.id == OWNER_ID:
         uname = single_mention.group(1)
         _, name = get_user_by_username(uname)
@@ -526,7 +581,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Я не знаю @{uname}. Напиши его имя — я запомню.")
         return
 
-    single_id = re.fullmatch(r"(\d{5,})", query.strip())
     if single_id and is_private and user.id == OWNER_ID:
         tid = int(single_id.group(1))
         info = KNOWN_USERS.get(tid)
@@ -536,8 +590,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pending_names[chat.id] = {"type": "id", "value": str(tid)}
             await msg.reply_text(f"Я не знаю ID {tid}. Напиши его имя — я запомню.")
         return
-
-    reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
 
     def _resolve_name(name: str):
         name = name.strip().lower().rstrip("ауыоеёияю")
@@ -600,6 +652,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if re.search(r"(?i)(?:кто твой|чей ты|ты чей)\s*(?:хозяин|создатель)", query):
         await msg.reply_text("Мой хозяин — Эмин (@eminem07281). Я слушаюсь только его.")
+        return
+
+    if re.fullmatch(r"группы", query.strip().lower()) and is_private and user.id == OWNER_ID:
+        if not bot_groups:
+            await msg.reply_text("Я не в одной группе.")
+            return
+        keyboard = [[InlineKeyboardButton(title, callback_data=f"gu:{gid}")] for gid, title in bot_groups.items()]
+        await msg.reply_text("Выбери группу:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if re.search(r"(?i)^добавить\b", query.strip()) and is_private and user.id == OWNER_ID:
+        user_id = user.id
+        if user_id not in group_flow or "group_id" not in group_flow[user_id]:
+            await msg.reply_text("Сначала выбери группу через `группы`.")
+            return
+        group_flow[user_id]["step"] = "awaiting_id"
+        await msg.reply_text("Отправь @username или ID пользователя:")
         return
 
     if re.search(r"(?i)(?:следи|мониторь)\s+за\s+этой\s+группой", query):
@@ -965,6 +1034,47 @@ async def track_member_changes(update: Update, context: ContextTypes.DEFAULT_TYP
     if not mc:
         return
     chat_id = mc.chat.id
+    bot_id = context.bot.id
+    if mc.new_chat_member.user.id == bot_id:
+        if mc.new_chat_member.status in ("member", "administrator"):
+            title = mc.chat.title or mc.chat.effective_name or str(chat_id)
+            bot_groups[chat_id] = title
+        elif mc.new_chat_member.status in ("left", "kicked"):
+            bot_groups.pop(chat_id, None)
+    if mc.old_chat_member.status in ("member", "administrator", "creator") and mc.new_chat_member.status in ("left", "kicked") and mc.new_chat_member.user.id != bot_id:
+        info = KNOWN_USERS.get(mc.new_chat_member.user.id, {})
+        name = info.get("name") or mc.new_chat_member.user.full_name or mc.new_chat_member.user.first_name or str(mc.new_chat_member.user.id)
+        if chat_id not in departed_members:
+            departed_members[chat_id] = {}
+        departed_members[chat_id][mc.new_chat_member.user.id] = {"name": name, "time": time.time()}
+
+async def group_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user = query.from_user
+    if user.id != OWNER_ID:
+        await query.edit_message_text("Только сэр.")
+        return
+    if data.startswith("gu:"):
+        gid = int(data[3:])
+        users = group_users.get(gid, {})
+        title = bot_groups.get(gid, str(gid))
+        lines = [f"📋 *{title}*"]
+        for uid, info in users.items():
+            lines.append(f"• {info['name']} — @{info.get('username', uid)}")
+        if not users:
+            lines.append("_(никого не запомнил)_")
+        lines.append("")
+        lines.append("Напиши `добавить` чтобы добавить человека.")
+        group_flow[user.id] = {"step": "idle", "group_id": gid}
+        await query.edit_message_text("\n".join(lines), parse_mode="Markdown")
+
+async def _tag_job_callback(context: ContextTypes.DEFAULT_TYPE):
+    mc = update.chat_member
+    if not mc:
+        return
+    chat_id = mc.chat.id
     user = mc.new_chat_member.user
     old = mc.old_chat_member.status
     new = mc.new_chat_member.status
@@ -1010,6 +1120,7 @@ def main():
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
     app.add_handler(ChatMemberHandler(track_member_changes, ChatMemberHandler.ANY_CHAT_MEMBER))
+    app.add_handler(CallbackQueryHandler(group_callback, pattern=r"^gu:"))
     app.add_error_handler(error_handler)
 
     logger.info(f"{BOT_NAME} bot started!")
