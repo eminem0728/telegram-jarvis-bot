@@ -130,10 +130,17 @@ def _get_github_sha():
         pass
     return None
 
-def learn_user(username: str, name: str, user_id: int = None):
+def learn_user(username: str, name: str, caller_id: int = None, target_uid: int = None):
     global USERNAME_MAP, NAME_MAP
-    if user_id and user_id != OWNER_ID:
+    if caller_id and caller_id != OWNER_ID:
         return None
+    if target_uid:
+        uid = target_uid
+        KNOWN_USERS[uid] = {"name": name, "username": str(uid), "type": "guy"}
+        USERNAME_MAP[str(uid)] = uid
+        NAME_MAP[name.lower()] = (uid, str(uid))
+        save_extra_users()
+        return name
     username_clean = username.lstrip("@").lower()
     for uid, info in KNOWN_USERS.items():
         if info["username"].lower() == username_clean:
@@ -511,6 +518,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Я не знаю человека с юзернеймом @{mention.group(1)}.")
         return
 
+    id_match = re.search(r"(?i)(?:кто это|кто этот|кто такая|кто такой)\s+(\d{5,})", query)
+    if id_match:
+        tid = int(id_match.group(1))
+        info = KNOWN_USERS.get(tid)
+        if info:
+            await msg.reply_text(f"Это {info['name']}.")
+        else:
+            await msg.reply_text(f"Я не знаю человека с ID {tid}.")
+        return
+
     tag_match = re.search(r"(?i)(?:отметь|тегни|упомяни)\s+(.+)", query)
     if tag_match:
         found = _resolve_name(tag_match.group(1))
@@ -606,15 +623,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("Только сэр может отключить.")
         return
 
-    learn_match = re.search(r"(?i)(?:запомни\s+)?@(\w+)\s+это\s+(.+)", query)
+    learn_match = re.search(r"(?i)(?:запомни\s+)?(?:@(\w+)|(\d+))\s+это\s+(.+)", query)
     if learn_match:
         if user.id != OWNER_ID:
             await msg.reply_text("Только сэр может менять имена.")
             return
-        uname = learn_match.group(1)
-        uname_name = learn_match.group(2).strip().rstrip(".!")
-        learned = learn_user(uname, uname_name, user.id)
-        await msg.reply_text(f"Запомнил: @{uname} — это {learned}.")
+        name_val = learn_match.group(3).strip().rstrip(".!")
+        if learn_match.group(1):
+            uname = learn_match.group(1)
+            learned = learn_user(uname, name_val, caller_id=user.id)
+            await msg.reply_text(f"Запомнил: @{uname} — это {learned}.")
+        else:
+            target_uid = int(learn_match.group(2))
+            learned = learn_user(None, name_val, caller_id=user.id, target_uid=target_uid)
+            await msg.reply_text(f"Запомнил: {target_uid} — это {learned}.")
         return
 
     if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
