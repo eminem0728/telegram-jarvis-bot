@@ -477,6 +477,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
 
+    def _resolve_name(name: str):
+        name = name.strip().lower().rstrip("ауыоеёияю")
+        for key, (uid, uname) in NAME_MAP.items():
+            if key.startswith(name) or name.startswith(key):
+                return uid, uname, key
+        return None
+
     mention = re.search(r"@(\w+)", query)
     if mention and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
         _, name = get_user_by_username(mention.group(1))
@@ -485,13 +492,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await msg.reply_text(f"Я не знаю человека с юзернеймом @{mention.group(1)}.")
         return
-
-    def _resolve_name(name: str):
-        name = name.strip().lower().rstrip("ауыоеёияю")
-        for key, (uid, uname) in NAME_MAP.items():
-            if key.startswith(name) or name.startswith(key):
-                return uid, uname, key
-        return None
 
     tag_match = re.search(r"(?i)(?:отметь|тегни|упомяни)\s+(.+)", query)
     if tag_match:
@@ -545,13 +545,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     leave_match = re.search(r"(?i)почему\s+(.+?)\s+(вышел|вышла|ушёл|ушла|покинул)(?:\s|$|\.)", query)
     if leave_match:
-        name_query = leave_match.group(1).strip().lower().rstrip("ауыоеёияю ")
-        uid = None
-        for uid_candidate, info in KNOWN_USERS.items():
-            key = info["name"].lower().rstrip("ауыоеёияю ")
-            if key == name_query or name_query.startswith(key) or key.startswith(name_query):
-                uid = uid_candidate
-                break
+        resolved = _resolve_name(leave_match.group(1))
+        if resolved:
+            uid, _, _ = resolved
+        else:
+            uid = None
         if uid and chat.id in departed_members and uid in departed_members[chat.id]:
             dep_info = departed_members[chat.id][uid]
             leave_time = dep_info["time"]
