@@ -557,6 +557,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("Только сэр может включить слежку.")
         return
 
+    tag_job = re.search(r"(?i)(?:тегай|пинг|спами)\s+@(\w+)\s+каждые\s+(\d+)\s*(секунд|минут|час)", query)
+    if tag_job and user.id == OWNER_ID:
+        uname = tag_job.group(1)
+        amount = int(tag_job.group(2))
+        unit = tag_job.group(3).lower()
+        interval = amount * {"секунд": 1, "минут": 60, "час": 3600}.get(unit, 60)
+        job_data = {"chat_id": chat.id, "username": uname}
+        context.job_queue.run_repeating(_tag_job_callback, interval=interval, data=job_data, name=f"tag_{chat.id}_{uname}")
+        await msg.reply_text(f"Буду тегать @{uname} каждые {amount} {unit}.")
+        return
+
+    if re.search(r"(?i)(?:хватит|прекрати|стоп|отстань)\s*(?:тегать|пинг|спамить)", query) and user.id == OWNER_ID:
+        jobs = context.job_queue.jobs()
+        removed = 0
+        for job in jobs:
+            if job.name.startswith(f"tag_{chat.id}_"):
+                job.schedule_removal()
+                removed += 1
+        if removed:
+            await msg.reply_text("Остановил тег.")
+        return
+
     if re.search(r"(?i)(?:не следи|хватит|отстань)", query) and chat.id in monitored_chats:
         if user.id == OWNER_ID:
             monitored_chats.discard(chat.id)
@@ -840,6 +862,11 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await msg.reply_text(
             f"👋 Привет, {member.first_name}! Добро пожаловать в чат. Я — {BOT_NAME}, если нужна помощь — просто скажи «Джарвис»."
         )
+
+async def _tag_job_callback(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    data = job.data
+    await context.bot.send_message(chat_id=data["chat_id"], text=f"@{data['username']}")
 
 async def track_member_changes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mc = update.chat_member
