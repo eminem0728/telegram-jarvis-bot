@@ -190,6 +190,23 @@ def save_group_users():
         json.dump({str(k): v for k, v in group_users.items()}, f, indent=2, ensure_ascii=False)
 
 group_users = load_group_users()
+
+BOT_GROUPS_FILE = "bot_groups.json"
+def load_bot_groups():
+    if os.path.exists(BOT_GROUPS_FILE):
+        try:
+            with open(BOT_GROUPS_FILE) as f:
+                return {int(k): v for k, v in json.load(f).items()}
+        except Exception:
+            return {}
+    return {}
+
+def save_bot_groups():
+    with open(BOT_GROUPS_FILE, "w") as f:
+        json.dump({str(k): v for k, v in bot_groups.items()}, f, indent=2)
+
+if not bot_groups:
+    bot_groups.update(load_bot_groups())
 MONITORED_CHATS_FILE = "monitored_chats.json"
 
 def load_monitored():
@@ -1039,8 +1056,10 @@ async def track_member_changes(update: Update, context: ContextTypes.DEFAULT_TYP
         if mc.new_chat_member.status in ("member", "administrator"):
             title = mc.chat.title or mc.chat.effective_name or str(chat_id)
             bot_groups[chat_id] = title
+            save_bot_groups()
         elif mc.new_chat_member.status in ("left", "kicked"):
             bot_groups.pop(chat_id, None)
+            save_bot_groups()
     if mc.old_chat_member.status in ("member", "administrator", "creator") and mc.new_chat_member.status in ("left", "kicked") and mc.new_chat_member.user.id != bot_id:
         info = KNOWN_USERS.get(mc.new_chat_member.user.id, {})
         name = info.get("name") or mc.new_chat_member.user.full_name or mc.new_chat_member.user.first_name or str(mc.new_chat_member.user.id)
