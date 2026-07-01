@@ -41,7 +41,7 @@ OWNER_ID = 5039153833
 KNOWN_USERS = {
     5039153833: {"name": "Эмин", "username": "eminem07281", "type": "sir"},
     5036884265: {"name": "Альмира", "username": "Alwsjho", "type": "girl"},
-    2001476363: {"name": "Айна", "username": "ailasha01", "type": "girl"},
+    2001476363: {"name": "Айлана", "username": "ailasha01", "type": "girl"},
     1570550583: {"name": "Даниал", "username": "zh_haise", "type": "guy"},
     5093297548: {"name": "Бек", "username": "samatbekuly", "type": "guy"},
     5700390653: {"name": "Шындаулет", "username": "Qwerto_t", "type": "guy"},
@@ -527,6 +527,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Это {KNOWN_USERS[found[0]]['name']} — @{found[1]}.")
         else:
             await msg.reply_text(f"Я не знаю кто это.")
+        return
+
+    if re.search(r"(?i)^кто я[.?!]?$", query.strip()):
+        info = get_user_info(user.id)
+        if info.get("name"):
+            await msg.reply_text(f"Ты {info['name']}.")
+        else:
+            await msg.reply_text(f"Ты {user.first_name}.")
         return
 
     if re.search(r"(?i)\b(?:я твой хозяин|я твой создатель|я хозяин)\b", query):
