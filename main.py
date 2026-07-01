@@ -639,6 +639,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Запомнил: {target_uid} — это {learned}.")
         return
 
+    reply_learn = re.search(r"(?i)(?:запомни\s+)?это\s+(.+)", query)
+    if reply_learn and msg.reply_to_message and not msg.reply_to_message.from_user.is_bot:
+        if user.id != OWNER_ID:
+            await msg.reply_text("Только сэр может менять имена.")
+            return
+        target = msg.reply_to_message.from_user
+        name_val = reply_learn.group(1).strip().rstrip(".!")
+        learned = learn_user(None, name_val, caller_id=user.id, target_uid=target.id)
+        await msg.reply_text(f"Запомнил: это {learned}.")
+        return
+
     if reply_user and re.search(r"(?i)кто это|кто этот|кто такая|кто такой", query):
         name = get_user_name(reply_user.id)
         if name:
