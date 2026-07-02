@@ -504,6 +504,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("Этот бот только для сэра.")
         return
 
+    if not is_private and chat.id not in bot_groups:
+        bot_groups[chat.id] = str(chat.id)
+        save_bot_groups()
+
     if not is_private:
         now = time.time()
         if chat.id not in owner_chats or now - owner_chats[chat.id] > 600:
