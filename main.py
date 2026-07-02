@@ -47,7 +47,8 @@ KNOWN_USERS = {
     5700390653: {"name": "Шындаулет", "username": "Qwerto_t", "type": "guy"},
     5859344398: {"name": "Алишер", "username": "Alisherrrrrrrrr", "type": "guy"},
     7485059711: {"name": "Амир", "username": "AMIRAS_S", "type": "guy"},
-    6784808056: {"name": "Мирас", "username": "spdy_sp", "type": "guy"},
+     6784808056: {"name": "Мирас", "username": "spdy_sp", "type": "guy"},
+     6487241086: {"name": "Ілияс", "username": "6487241086", "type": "guy"},
 }
 
 SPDY_SP_ID = 6784808056
@@ -75,7 +76,7 @@ NAME_MAP = {data["name"].lower(): (uid, data["username"]) for uid, data in KNOWN
 def save_extra_users():
     data = {str(uid): info for uid, info in KNOWN_USERS.items() if uid not in {
         5039153833, 5036884265, 2001476363, 1570550583, 5093297548,
-        5700390653, 5859344398, 7485059711, 6784808056,
+         5700390653, 5859344398, 7485059711, 6784808056, 6487241086,
     }}
     with open(EXTRA_USERS_FILE, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
