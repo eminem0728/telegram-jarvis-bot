@@ -225,6 +225,9 @@ def save_monitored():
 monitored_chats = load_monitored()
 
 def add_to_history(chat_id: int, role: str, content: str):
+    if chat_id < 0 and chat_id not in bot_groups:
+        bot_groups[chat_id] = str(chat_id)
+        save_bot_groups()
     if chat_id not in chat_history:
         chat_history[chat_id] = []
     chat_history[chat_id].append({"role": role, "content": content, "time": time.time()})
