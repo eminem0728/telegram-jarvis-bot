@@ -739,7 +739,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = info.get("name", "—")
             is_extra = uid not in {5039153833, 5036884265, 2001476363, 1570550583, 5093297548, 5700390653, 5859344398, 7485059711, 6784808056}
             mark = "➕" if is_extra else "▪"
-            lines.append(f"{mark} {name} — @{uname}")
+            lines.append(f"{mark} {name} — @{uname} · [`{uid}`](tg://user?id={uid})")
         await msg.reply_text("\n".join(lines), parse_mode="Markdown")
         return
 
