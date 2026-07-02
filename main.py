@@ -673,6 +673,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if re.fullmatch(r"группы", query.strip().lower()) and is_private and user.id == OWNER_ID:
         if not bot_groups:
+            for cid in list(chat_history.keys()):
+                if cid < 0:
+                    try:
+                        chat_obj = await context.bot.get_chat(cid)
+                        bot_groups[cid] = chat_obj.title or chat_obj.effective_name or str(cid)
+                    except Exception:
+                        bot_groups[cid] = str(cid)
+            save_bot_groups()
+        if not bot_groups:
             await msg.reply_text("Я не в одной группе.")
             return
         keyboard = [[InlineKeyboardButton(title, callback_data=f"gu:{gid}")] for gid, title in bot_groups.items()]
