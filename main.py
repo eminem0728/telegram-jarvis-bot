@@ -652,6 +652,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Я не знаю кто это.")
         return
 
+    if re.search(r"(?i)^кто я[.?!]?$", query.strip()):
+        info = get_user_info(user.id)
+        if info.get("name"):
+            await msg.reply_text(f"Ты {info['name']}.")
+        else:
+            await msg.reply_text(f"Ты {user.first_name}.")
+        return
+
     who_match = re.search(r"(?i)кто\s+(.+)", query)
     if who_match and not re.search(r"(?i)это|такой|такая|такой", who_match.group(0)):
         found = _resolve_name(who_match.group(1))
@@ -659,14 +667,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Это {KNOWN_USERS[found[0]]['name']} — @{found[1]}.")
         else:
             await msg.reply_text(f"Я не знаю кто это.")
-        return
-
-    if re.search(r"(?i)^кто я[.?!]?$", query.strip()):
-        info = get_user_info(user.id)
-        if info.get("name"):
-            await msg.reply_text(f"Ты {info['name']}.")
-        else:
-            await msg.reply_text(f"Ты {user.first_name}.")
         return
 
     if re.search(r"(?i)\b(?:я твой хозяин|я твой создатель|я хозяин)\b", query):
