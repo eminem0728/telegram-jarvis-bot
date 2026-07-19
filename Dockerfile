@@ -10,4 +10,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE 10000
-CMD ["python", "main.py"]
+CMD python -c "
+import subprocess, sys, time
+while True:
+    proc = subprocess.run([sys.executable, 'main.py'])
+    if proc.returncode != 0:
+        print(f'Bot exited with code {proc.returncode}, restarting in 3s...')
+    time.sleep(3)
+"
