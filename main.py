@@ -560,6 +560,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if msg.reply_to_message and msg.reply_to_message.voice and "расшифруй" in text_lower:
+        status_msg = await msg.reply_text("🎤 Расшифровываю...")
+        transcribed = await transcribe_voice_message(msg.reply_to_message.voice, msg, context)
+        if transcribed:
+            safe = transcribed.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            await status_msg.edit_text(f"<blockquote>{safe}</blockquote>", parse_mode="HTML")
+        else:
+            await status_msg.edit_text("Не расслышал.")
+        return
+
     reply_user = msg.reply_to_message.from_user if msg.reply_to_message else None
 
     single_mention = re.fullmatch(r"@(\w+)", query.strip())
@@ -940,6 +950,50 @@ async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
         )
 
+async def transcribe_voice_message(voice, target_msg, context):
+    file = await voice.get_file()
+    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
+        ogg_path = f.name
+    await file.download_to_drive(ogg_path)
+
+    wav_path = ogg_path.replace(".ogg", ".wav")
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(
+            None, lambda: AudioSegment.from_file(ogg_path).export(wav_path, format="wav")
+        )
+    except Exception as e:
+        logger.error(f"Audio conversion error: {e}")
+        await target_msg.reply_text("Ошибка при обработке голоса.")
+        _cleanup_files(ogg_path, wav_path)
+        return None
+
+    recognizer = sr.Recognizer()
+    try:
+        with sr.AudioFile(wav_path) as source:
+            audio = recognizer.record(source)
+    except Exception as e:
+        logger.error(f"Audio read error: {e}")
+        await target_msg.reply_text("Ошибка при обработке голоса.")
+        _cleanup_files(ogg_path, wav_path)
+        return None
+
+    text = None
+    for lang in ("ru-RU",):
+        try:
+            text = await loop.run_in_executor(
+                None, lambda l=lang: recognizer.recognize_google(audio, language=l)
+            )
+            break
+        except sr.UnknownValueError:
+            continue
+        except Exception as e:
+            logger.error(f"STT error ({lang}): {e}")
+            continue
+
+    _cleanup_files(ogg_path, wav_path)
+    return text
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.voice:
@@ -965,77 +1019,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not owner_chats.get(chat.id):
             return
 
-    status_msg = await msg.reply_text("🎤 Слушаю...")
-
-    voice = msg.voice
-    file = await voice.get_file()
-
-    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
-        ogg_path = f.name
-    await file.download_to_drive(ogg_path)
-
-    wav_path = ogg_path.replace(".ogg", ".wav")
-    loop = asyncio.get_event_loop()
-    try:
-        await loop.run_in_executor(
-            None, lambda: AudioSegment.from_file(ogg_path).export(wav_path, format="wav")
-        )
-    except Exception as e:
-        logger.error(f"Audio conversion error: {e}")
-        await status_msg.edit_text("Ошибка при обработке голоса.")
-        _cleanup_files(ogg_path, wav_path)
-        return
-
-    recognizer = sr.Recognizer()
-    try:
-        with sr.AudioFile(wav_path) as source:
-            audio = recognizer.record(source)
-    except Exception as e:
-        logger.error(f"Audio read error: {e}")
-        await status_msg.edit_text("Ошибка при обработке голоса.")
-        _cleanup_files(ogg_path, wav_path)
-        return
-
-    text = None
-    for lang in ("ru-RU",):
-        try:
-            text = await loop.run_in_executor(
-                None, lambda l=lang: recognizer.recognize_google(audio, language=l)
-            )
-            break
-        except sr.UnknownValueError:
-            continue
-        except Exception as e:
-            logger.error(f"STT error ({lang}): {e}")
-            continue
-
-    _cleanup_files(ogg_path, wav_path)
-
-    if not text:
-        await status_msg.edit_text("Не расслышал.")
-        return
-
-    chat_id = update.effective_chat.id
-
-    if text.lower().startswith("джарвис"):
-        clean_query = re.sub(r"(?i)^джарвис[,!\s]*", "", text).strip() or text
-        user_info = get_user_info(user.id)
-        add_to_history(chat_id, "user", clean_query)
-        response = await get_ai_response(clean_query, user_info.get("name"), user_info.get("type"), chat_id)
-        add_to_history(chat_id, "assistant", response)
-        parts = [response[i:i + 4000] for i in range(0, len(response), 4000)]
-        try:
-            await status_msg.edit_text(parts[0], parse_mode="Markdown", disable_web_page_preview=True)
-        except Exception:
-            await status_msg.edit_text(parts[0], disable_web_page_preview=True)
-        for part in parts[1:]:
-            try:
-                await context.bot.send_message(chat_id=chat_id, text=part, parse_mode="Markdown", disable_web_page_preview=True)
-            except Exception:
-                await context.bot.send_message(chat_id=chat_id, text=part, disable_web_page_preview=True)
-    else:
-        safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        await status_msg.edit_text(f"<blockquote>{safe}</blockquote>", parse_mode="HTML")
+    await msg.reply_text("Ответьте 'расшифруй' на это голосовое, и я расшифрую его.")
 
 def _cleanup_files(*paths):
     for p in paths:
