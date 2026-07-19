@@ -1,0 +1,24 @@
+# fly.toml app configuration file generated for jarvis-bot-purple-starlight-5770 on 2026-07-19T22:50:34+05:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'jarvis-bot-purple-starlight-5770'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  PORT = '10000'
+
+[http_service]
+  internal_port = 10000
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+[[vm]]
+  size = 'shared-cpu-1x'
