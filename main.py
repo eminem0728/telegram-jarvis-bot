@@ -168,6 +168,16 @@ def get_user_by_username(username: str):
         return uid, KNOWN_USERS[uid]["name"]
     return None, None
 
+def resolve_user_name(user_id: int, username: str = None, first_name: str = None) -> str:
+    info = KNOWN_USERS.get(user_id)
+    if info and info.get("name"):
+        return info["name"]
+    if username:
+        uid = USERNAME_MAP.get(username.lower().lstrip("@"))
+        if uid and uid in KNOWN_USERS:
+            return KNOWN_USERS[uid]["name"]
+    return username or first_name or str(user_id)
+
 chat_history: dict = {}
 owner_chats: dict = {}
 departed_members: dict = {}
@@ -555,8 +565,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not query:
+        display_name = resolve_user_name(user.id, user.username, msg.from_user.first_name)
         await msg.reply_text(
-            f"Слушаю, {msg.from_user.first_name}! Что вы хотите узнать?"
+            f"Слушаю, {display_name}! Что вы хотите узнать?"
         )
         return
 
@@ -667,7 +678,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if info.get("name"):
             await msg.reply_text(f"Ты {info['name']}.")
         else:
-            await msg.reply_text(f"Ты {user.first_name}.")
+            display_name = resolve_user_name(user.id, user.username, user.first_name)
+            await msg.reply_text(f"Ты {display_name}.")
         return
 
     who_match = re.search(r"(?i)кто\s+(.+)", query)
