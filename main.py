@@ -1019,7 +1019,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not owner_chats.get(chat.id):
             return
 
-    await msg.reply_text("Ответьте 'расшифруй' на это голосовое, и я расшифрую его.")
+    return
 
 def _cleanup_files(*paths):
     for p in paths:
