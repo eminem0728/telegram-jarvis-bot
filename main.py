@@ -682,13 +682,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Ты {display_name}.")
         return
 
-    who_match = re.search(r"(?i)кто\s+(.+)", query)
-    if who_match and not re.search(r"(?i)это|такой|такая|такой", who_match.group(0)):
-        found = _resolve_name(who_match.group(1))
+    who_match = re.search(r"(?i)кто\s+(?:такой|такая|такое)?\s*(.+)", query)
+    if who_match and not re.search(r"(?i)это\s+(?:я|ты|он|она|они|мы|вы)\b", who_match.group(0)):
+        name = who_match.group(1).strip()
+        found = _resolve_name(name)
         if found:
             await msg.reply_text(f"Это {KNOWN_USERS[found[0]]['name']} — @{found[1]}.")
         else:
-            await msg.reply_text(f"Я не знаю кто это.")
+            user_info = get_user_info(user.id)
+            user_name = user_info.get("name")
+            user_type = user_info.get("type")
+            chat_id = update.effective_chat.id
+            add_to_history(chat_id, "user", query)
+            response = await get_ai_response(query, user_name, user_type, chat_id)
+            add_to_history(chat_id, "assistant", response)
+            for i in range(0, len(response), 4000):
+                part = response[i:i + 4000]
+                try:
+                    await msg.reply_text(part, parse_mode="Markdown", disable_web_page_preview=True)
+                except Exception:
+                    await msg.reply_text(part, disable_web_page_preview=True)
         return
 
     if re.search(r"(?i)\b(?:я твой хозяин|я твой создатель|я хозяин)\b", query):
