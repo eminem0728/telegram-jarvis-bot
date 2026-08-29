@@ -387,7 +387,7 @@ async def get_opencode_zen_response(query: str, user_name: str = None, user_type
     messages.append({"role": "user", "content": f"{greeting}{query}"})
     try:
         resp = await client.chat.completions.create(
-            model=os.getenv("OPENCODE_ZEN_MODEL", "deepseek-v4-flash-free"),
+            model=os.getenv("OPENCODE_ZEN_MODEL", "nemotron-3-ultra-free"),
             messages=messages,
             max_tokens=800,
             temperature=0.9,
