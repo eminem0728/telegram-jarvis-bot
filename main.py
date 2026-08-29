@@ -420,7 +420,11 @@ async def download_music(query_or_url: str) -> dict | None:
 
 async def get_openai_response(query: str) -> str:
     import openai
-    client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+    client = openai.AsyncOpenAI(
+        api_key=OPENAI_API_KEY,
+        timeout=30.0,
+        max_retries=1,
+    )
     try:
         resp = await client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
@@ -448,8 +452,11 @@ async def get_gemini_response(query: str) -> str:
     genai.configure(api_key=GEMINI_API_KEY)
     try:
         model = genai.GenerativeModel("gemini-pro")
-        resp = model.generate_content(
-            f"Ты {BOT_NAME} — умный ассистент. Отвечай кратко, на русском. {query}"
+        resp = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: model.generate_content(
+                f"Ты {BOT_NAME} — умный ассистент. Отвечай кратко, на русском. {query}"
+            ),
         )
         return resp.text
     except Exception as e:
@@ -461,6 +468,8 @@ async def get_opencode_zen_response(query: str, user_name: str = None, user_type
     client = openai.AsyncOpenAI(
         api_key=OPENCODE_ZEN_API_KEY,
         base_url="https://opencode.ai/zen/v1",
+        timeout=30.0,
+        max_retries=0,
     )
     greeting = f"Тебе пишет {user_name}. " if user_name else ""
     system_message = {
@@ -552,6 +561,50 @@ async def get_ai_response(query: str, user_name: str = None, user_type: str = No
         return await get_opencode_zen_response(query, user_name, user_type, chat_id)
     else:
         return await get_web_response(query)
+
+async def _keep_typing(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    while True:
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        except Exception as e:
+            logger.debug(f"Typing action error: {e}")
+        await asyncio.sleep(4)
+
+async def get_ai_response_with_typing(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    query: str,
+    user_name: str = None,
+    user_type: str = None,
+    use_chat_history: bool = True,
+) -> str:
+    typing_task = asyncio.create_task(_keep_typing(context, chat_id))
+    try:
+        timeout = float(os.getenv("AI_RESPONSE_TIMEOUT", "75"))
+        response = await asyncio.wait_for(
+            get_ai_response(
+                query,
+                user_name,
+                user_type,
+                chat_id if use_chat_history else None,
+            ),
+            timeout=timeout,
+        )
+        if not isinstance(response, str) or not response.strip():
+            return "AI вернул пустой ответ. Попробуй задать вопрос ещё раз."
+        return response.strip()
+    except asyncio.TimeoutError:
+        logger.warning(f"AI response timed out after {os.getenv('AI_RESPONSE_TIMEOUT', '75')} seconds")
+        return "AI отвечает слишком долго. Попробуй ещё раз через несколько секунд."
+    except Exception as e:
+        logger.error(f"Unhandled AI response error: {type(e).__name__}: {e}")
+        return "Не удалось получить ответ от AI. Попробуй ещё раз через несколько секунд."
+    finally:
+        typing_task.cancel()
+        try:
+            await typing_task
+        except asyncio.CancelledError:
+            pass
 
 async def search_images(query: str) -> List[str]:
     import httpx
@@ -826,7 +879,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_type = user_info.get("type")
             chat_id = update.effective_chat.id
             add_to_history(chat_id, "user", query)
-            response = await get_ai_response(query, user_name, user_type, chat_id)
+            response = await get_ai_response_with_typing(
+                context, chat_id, query, user_name, user_type
+            )
             add_to_history(chat_id, "assistant", response)
             for i in range(0, len(response), 4000):
                 part = response[i:i + 4000]
@@ -984,7 +1039,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if recent:
                 ctx = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in recent[-20:])
                 prompt = f"Вот сообщения перед тем как {dep_info['name']} покинул чат. Кратко объясни почему он/она мог уйти, опираясь на сообщения. Без лишних слов:\n{ctx}"
-                resp = await get_ai_response(prompt, user_name="анализ", chat_id=None)
+                resp = await get_ai_response_with_typing(
+                    context,
+                    chat.id,
+                    prompt,
+                    user_name="анализ",
+                    use_chat_history=False,
+                )
                 await msg.reply_text(resp[:2000])
             else:
                 await msg.reply_text(f"Не знаю, не вижу ссоры перед выходом {dep_info['name']}.")
@@ -1092,10 +1153,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await status.edit_text("Не удалось скачать.")
             return
 
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action="typing"
-    )
-
     user_info = get_user_info(user.id)
     user_name = user_info.get("name")
     user_type = user_info.get("type")
@@ -1125,7 +1182,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(f"Не нашёл изображений по запросу '{query}'.")
     else:
         add_to_history(chat_id, "user", query)
-        response = await get_ai_response(query, user_name, user_type, chat_id)
+        response = await get_ai_response_with_typing(
+            context, chat_id, query, user_name, user_type
+        )
         add_to_history(chat_id, "assistant", response)
         for i in range(0, len(response), 4000):
             part = response[i : i + 4000]
