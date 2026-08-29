@@ -322,6 +322,102 @@ async def download_video(url: str) -> str | None:
             _cleanup_files(f)
         return None
 
+def _extract_music_query(query: str) -> str | None:
+    patterns = (
+        r"(?i)^(?:найди(?:\s+и\s+скачай)?|скачай|загрузи|отправь)(?:\s+мне)?\s+(?:музыку|песню|трек|аудио)(?:\s+|:\s*)(.+)$",
+        r"(?i)^(?:включи|поставь)(?:\s+мне)?(?:\s+(?:музыку|песню|трек|аудио))?(?:\s+|:\s*)(.+)$",
+        r"(?i)^(?:музыка|песня|трек|аудио)(?:\s+|:\s*)(.+)$",
+        r"(?i)^(?:найди|скачай|загрузи|отправь)(?:\s+мне)?\s+(.+?)\s+(?:песню|трек|музыку)$",
+    )
+    for pattern in patterns:
+        match = re.match(pattern, query.strip())
+        if match:
+            value = match.group(1).strip()
+            return value[:300] if value else None
+    return None
+
+def _cleanup_music_directory(path: str | None):
+    if not path:
+        return
+    import shutil
+    temp_root = os.path.realpath(tempfile.gettempdir())
+    target = os.path.realpath(path)
+    if os.path.dirname(target) != temp_root or not os.path.basename(target).startswith("jarvis_music_"):
+        logger.warning(f"Skipped unsafe music cleanup path: {target}")
+        return
+    try:
+        shutil.rmtree(target)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.warning(f"Music cleanup error: {e}")
+
+async def download_music(query_or_url: str) -> dict | None:
+    import glob
+    import yt_dlp
+
+    temp_dir = tempfile.mkdtemp(prefix="jarvis_music_")
+
+    def _download() -> dict | None:
+        target = query_or_url if re.match(r"https?://", query_or_url, re.IGNORECASE) else f"ytsearch1:{query_or_url}"
+
+        def _duration_filter(info, *, incomplete=False):
+            duration = info.get("duration")
+            if duration and duration > 1800:
+                return "Трек длиннее 30 минут"
+            return None
+
+        opts = {
+            "format": "bestaudio/best",
+            "outtmpl": os.path.join(temp_dir, "%(id)s.%(ext)s"),
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "socket_timeout": 20,
+            "retries": 2,
+            "match_filter": _duration_filter,
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "128",
+                }
+            ],
+        }
+
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(target, download=True)
+            if info and info.get("entries"):
+                info = next((entry for entry in info["entries"] if entry), None)
+            if not info:
+                return None
+
+            expected_path = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
+            if not os.path.exists(expected_path):
+                matches = glob.glob(os.path.join(temp_dir, "*.mp3"))
+                expected_path = matches[0] if matches else ""
+            if not expected_path or not os.path.exists(expected_path) or os.path.getsize(expected_path) == 0:
+                return None
+
+            return {
+                "path": expected_path,
+                "temp_dir": temp_dir,
+                "title": (info.get("track") or info.get("title") or "Трек")[:64],
+                "performer": (info.get("artist") or info.get("uploader") or "")[:64],
+                "duration": int(info.get("duration") or 0),
+                "source_url": info.get("webpage_url") or info.get("original_url"),
+            }
+
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(None, _download)
+        if result:
+            return result
+    except Exception as e:
+        logger.error(f"Music download error: {type(e).__name__}: {e}")
+
+    _cleanup_music_directory(temp_dir)
+    return None
+
 async def get_openai_response(query: str) -> str:
     import openai
     client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -530,6 +626,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• `{BOT_NAME}, что такое ...` — спросить о чём угодно\n"
         f"• `{BOT_NAME}, покажи ...` — найти изображение\n"
         f"• `{BOT_NAME}, как выглядит ...` — показать фото\n\n"
+        f"• `{BOT_NAME}, найди песню ...` — скачать и отправить музыку\n\n"
         "В личных сообщениях отвечаю на всё, в группах — только когда скажешь «Джарвис».",
         parse_mode="Markdown",
         reply_markup=keyboard,
@@ -920,6 +1017,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         code = CURRENCY_MAP.get(curr_name, curr_name.upper())
         rate = await get_exchange_rate(code)
         await msg.reply_text(rate)
+        return
+
+    music_query = _extract_music_query(query)
+    if not music_query and re.search(r"(?i)\b(?:музыку|песню|трек|аудио)\b", query):
+        replied = msg.reply_to_message
+        if replied and replied.text:
+            replied_url = re.search(r"https?://[^\s]+", replied.text)
+            if replied_url:
+                music_query = replied_url.group()
+
+    if music_query:
+        status = await msg.reply_text("🔎 Ищу музыку...")
+        music = await download_music(music_query)
+        if not music:
+            await status.edit_text("Не смог найти или скачать этот трек. Попробуй указать исполнителя и название.")
+            return
+
+        try:
+            if os.path.getsize(music["path"]) > 49 * 1024 * 1024:
+                await status.edit_text("Трек получился слишком большим для отправки в Telegram.")
+                return
+
+            await status.edit_text(f"🎵 Нашёл: {music['title']}\nОтправляю...")
+            with open(music["path"], "rb") as audio_file:
+                await msg.reply_audio(
+                    audio=audio_file,
+                    title=music["title"],
+                    performer=music["performer"] or None,
+                    duration=music["duration"] or None,
+                    read_timeout=120,
+                    write_timeout=120,
+                    connect_timeout=30,
+                    pool_timeout=30,
+                )
+            await status.delete()
+        except Exception as e:
+            logger.error(f"Music send error: {type(e).__name__}: {e}")
+            await status.edit_text("Не удалось отправить аудио. Попробуй другой трек.")
+        finally:
+            _cleanup_music_directory(music.get("temp_dir"))
         return
 
     if re.search(r"(?i)скачай", query):
