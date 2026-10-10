@@ -580,7 +580,7 @@ async def get_gemini_response(query: str) -> str:
     import httpx
     if not GEMINI_API_KEY:
         return "Нет GEMINI_API_KEY. Получи бесплатно на https://aistudio.google.com/apikey и впиши в .env."
-    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     try:
         async with httpx.AsyncClient(timeout=30.0) as c:
