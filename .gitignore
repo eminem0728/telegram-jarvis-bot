@@ -3,6 +3,10 @@ __pycache__/
 *.pyc
 bot.log
 bot_err.log
+logs/
+data/
 .virtualenv/
 .venv/
 venv/
+# копия main.py внутри android-сборки всегда генерируется из корня
+android/app/src/main/python/main.py

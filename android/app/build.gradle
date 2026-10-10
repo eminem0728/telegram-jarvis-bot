@@ -1,0 +1,73 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.chaquo.python")
+}
+
+android {
+    namespace = "com.jarvis.bot"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.jarvis.bot"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
+
+        ndk {
+            // Helio G96 = arm64. Оставляем только arm64 чтобы APK был меньше.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+
+        python {
+            version = "3.11"
+            pip {
+                install("openai==1.68.2")
+                install("python-telegram-bot==21.10")
+                install("duckduckgo_search==7.5.2")
+                install("httpx==0.27.0")
+                install("SpeechRecognition==3.11.0")
+                install("yt-dlp")
+                install("python-dotenv==1.1.0")
+                // pydub чистый python, ffmpeg берем нативным пакетом ниже
+                install("pydub==0.25.1")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+        }
+        debug {
+            isMinifyEnabled = false
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    // ffmpeg для музыки/голосовых (pydub + yt-dlp)
+    implementation("com.arthenica:mobile-ffmpeg-full:4.4.LTS")
+}
+
+chaquopy {
+    // python код лежит в app/src/main/python/
+}
+
+// Всегда брать свежий main.py из корня репо, чтобы APK и сервер не расходились
+tasks.register<Copy>("syncBotMain") {
+    from(rootProject.projectDir.parent + "/main.py")
+    into("src/main/python")
+}
+tasks.named("preBuild") { dependsOn("syncBotMain") }
