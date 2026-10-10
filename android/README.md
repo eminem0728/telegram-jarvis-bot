@@ -1,29 +1,64 @@
-# Jarvis Bot — Android APK (standalone, для Realme Narzo 50)
+# Jarvis Bot — отдельная APK (вариант 1, без Termux)
 
-Отдельное приложение без Termux. Python внутри через Chaquopy + ForegroundService.
+Python внутри приложения через Chaquopy + ForegroundService с кнопкой Вкл/Выкл.
+Файл `main.py` подтягивается из корня репозитория автоматически при сборке
+(`syncBotMain` в `app/build.gradle`), руками копировать не надо.
 
-## Как собрать APK
+## Что нужно на ПК
 
-1. Поставь Android Studio (на ПК).
-2. Открой папку `android/` из этого репозитория как проект.
-3. Дождись sync Gradle (скачается Chaquopy + Python 3.11).
-4. Build -> Build APK(s). Получишь `app-debug.apk`.
-5. Скинь на Narzo 50, разреши «установку из неизвестных источников», поставь.
-6. Открой Jarvis -> вставь `TELEGRAM_TOKEN` и `OPENCODE_ZEN_API_KEY` -> кнопка ВКЛ.
-7. Разреши: уведомления + «без ограничений» в батарее + автозапуск.
-   На Realme: удерживай иконку Jarvis -> Информация -> Батарея -> Без ограничений.
+- Android Studio (свежая, с bundled JDK 17), ~10 ГБ места
+- Интернет на первой сборке: Gradle скачает Chaquopy + Python 3.11 + пакеты
+- Телефон Narzo 50 с разрешением «установка из неизвестных источников»
 
-## Как это работает
+## Сборка (первый раз минут 20-30)
 
-- `MainActivity.kt` — экран с большой кнопкой Вкл/Выкл + поля для ключей + лог.
-- `JarvisService.kt` — ForegroundService с постоянным уведомлением, WakeLock + WifiLock, перезапуск при падении. Внутри запускает Python `bot_main.start_bot()`.
-- `BootReceiver.kt` — автозапуск после перезагрузки телефона.
-- `bot_main.py` — копия `main.py`, но без health-сервера (на телефоне не нужен) и с путями в `filesDir`.
+1. В Android Studio: **Open** → выбери папку `android/` из репозитория.
+2. Дождись **Gradle Sync** (полоска внизу). Первый раз долго — качается тулчейн
+   Python 3.11 под arm64 и pip-пакеты:
+   `python-telegram-bot`, `httpx`, `python-dotenv`, `pydub`,
+   `SpeechRecognition`, `yt-dlp`. Всё чистый Python, собирается без ошибок.
+3. Если Sync красный — `File → Sync Project with Gradle Files` ещё раз.
+   Частые причины: нет интернета / нет места / старый кэш (`File → Invalidate Caches`).
+4. **Build → Build APK(s)** → внизу появится путь:
+   `app/build/outputs/apk/debug/app-debug.apk` (кнопка locate).
+5. Скинь APK на телефон (USB / Telegram «Избранное») и поставь.
 
-Без уведомления в шторке на Android 12+ фон убивается — это ограничение Android, а не баг. Уведомление «Jarvis работает» должно висеть всегда.
+## Первый запуск на телефоне
 
-## Важно
+1. Открой **Jarvis** → вставь `TELEGRAM_TOKEN` (от `@BotFather`) и
+   `OPENCODE_ZEN_API_KEY` → **ВКЛЮЧИТЬ БОТА**.
+2. Разреши уведомления (иначе Android убьёт фон — это правило системы, не баг).
+3. Удерживай иконку Jarvis → Информация → Батарея → **Без ограничений**,
+   разреши автозапуск. В шторке должно висеть «Jarvis Bot работает».
+4. После перезагрузки телефона бот стартует сам (`BootReceiver`),
+   если был включён.
 
-- Размер APK ~70-120МБ (внутри Python + yt-dlp + openai + telegram).
-- Музыка/видео через ffmpeg: используется `mobile-ffmpeg`, на Helio G96 работает.
-- Если бот падает — смотри лог прямо в приложении.
+## Что работает из коробки, а что нет
+
+- Чат с AI, погода, курс, картинки, поиск, скачивание видео/музыки,
+  тегалки, память имён — всё работает.
+- **ffmpeg**: для расшифровки голосовых и конвертации музыки в mp3 нужен
+  бинарник. Без него:
+  - музыка качается целым файлом как есть (m4a/webm),
+  - видео качается целым mp4 без склейки,
+  - голосовые отвечают «без ffmpeg не расшифрую».
+- Если достанешь static-сборку `ffmpeg` под arm64 — положи файл с именем
+  `ffmpeg` во внутреннюю папку данных приложения, `bot_main.py` сам
+  добавит её в PATH и включит полный режим.
+
+## Ручная проверка перед сборкой (на ПК)
+
+```powershell
+python -m py_compile ..\main.py
+```
+
+## Структура
+
+- `app/src/main/java/com/jarvis/bot/MainActivity.kt` — экран: токены + Вкл/Выкл
+- `app/src/main/java/com/jarvis/bot/JarvisService.kt` — ForegroundService:
+  WakeLock + WifiLock, запуск Python в отдельном потоке, перезапуск при падении
+- `app/src/main/java/com/jarvis/bot/BootReceiver.kt` — автозапуск после reboot
+- `app/src/main/python/bot_main.py` — точка входа: папки данных, ffmpeg в PATH,
+  импорт `main`, запуск `main()`
+- `app/src/main/python/main.py` — НЕ коммитится (в `.gitignore`), генерируется
+  из корня при каждой сборке

@@ -26,8 +26,10 @@ IS_TERMUX = (
     or os.getenv("PREFIX", "").startswith("/data/data/com.termux")
 )
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data") if IS_TERMUX else BASE_DIR
-LOG_DIR = os.path.join(BASE_DIR, "logs") if IS_TERMUX else BASE_DIR
+# JARVIS_DATA_DIR / JARVIS_LOG_DIR позволяют внешней оболочке (Android APK)
+# подсунуть свои папки ДО импорта. Иначе: Termux/телефон -> ./data и ./logs.
+DATA_DIR = os.getenv("JARVIS_DATA_DIR") or (os.path.join(BASE_DIR, "data") if IS_TERMUX else BASE_DIR)
+LOG_DIR = os.getenv("JARVIS_LOG_DIR") or (os.path.join(BASE_DIR, "logs") if IS_TERMUX else BASE_DIR)
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -347,18 +349,35 @@ async def get_exchange_rate(code: str) -> str:
     except Exception:
         return "Ошибка при запросе курса."
 
+def ffmpeg_available() -> bool:
+    """Есть ли бинарник ffmpeg (нужен pydub и yt-dlp для конвертации).
+
+    На Termux ставится через `pkg install ffmpeg`, в APK — положить
+    static-сборку arm64 в filesDir/ffmpeg (bot_main.py сам добавит в PATH).
+    Без него музыка/видео качаются только целыми файлами без конвертации,
+    а голосовые не расшифровываются.
+    """
+    import shutil
+    return bool(os.getenv("FFMPEG_BINARY") or shutil.which("ffmpeg"))
+
 async def download_video(url: str) -> str | None:
     import yt_dlp
     import glob
     tmp_base = tempfile.mktemp()
     try:
+        if ffmpeg_available():
+            fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best"
+        else:
+            # Без ffmpeg склейка невозможна — берём целый файл.
+            fmt = "best[height<=1080][ext=mp4]/best[height<=1080]/best"
         opts = {
             "outtmpl": tmp_base + ".%(ext)s",
-            "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best",
-            "merge_output_format": "mp4",
+            "format": fmt,
             "quiet": True,
             "no_warnings": True,
         }
+        if ffmpeg_available():
+            opts["merge_output_format"] = "mp4"
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).download([url]))
         matches = glob.glob(tmp_base + ".*")
@@ -416,8 +435,9 @@ async def download_music(query_or_url: str) -> dict | None:
                 return "Трек длиннее 30 минут"
             return None
 
+        has_ffmpeg = ffmpeg_available()
         opts = {
-            "format": "bestaudio/best",
+            "format": "bestaudio/best" if has_ffmpeg else "bestaudio[ext=m4a]/bestaudio/best",
             "outtmpl": os.path.join(temp_dir, "%(id)s.%(ext)s"),
             "noplaylist": True,
             "quiet": True,
@@ -425,14 +445,15 @@ async def download_music(query_or_url: str) -> dict | None:
             "socket_timeout": 20,
             "retries": 2,
             "match_filter": _duration_filter,
-            "postprocessors": [
+        }
+        if has_ffmpeg:
+            opts["postprocessors"] = [
                 {
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
                     "preferredquality": "128",
                 }
-            ],
-        }
+            ]
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target, download=True)
@@ -441,9 +462,17 @@ async def download_music(query_or_url: str) -> dict | None:
             if not info:
                 return None
 
-            expected_path = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
-            if not os.path.exists(expected_path):
-                matches = glob.glob(os.path.join(temp_dir, "*.mp3"))
+            expected_path = ""
+            if has_ffmpeg:
+                expected_path = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
+            if not expected_path or not os.path.exists(expected_path):
+                # Без ffmpeg забираем скачанный файл как есть (m4a/webm/mp3).
+                matches = sorted(
+                    glob.glob(os.path.join(temp_dir, "*.*")),
+                    key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0,
+                    reverse=True,
+                )
+                matches = [p for p in matches if not p.endswith((".part", ".ytdl", ".json", ".tmp"))]
                 expected_path = matches[0] if matches else ""
             if not expected_path or not os.path.exists(expected_path) or os.path.getsize(expected_path) == 0:
                 return None
@@ -1400,6 +1429,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # На телефоне ffmpeg ставится через pkg — расшифровка работает локально.
+    if not ffmpeg_available():
+        await msg.reply_text("Голосовые без ffmpeg не расшифрую. В Termux: pkg install ffmpeg, в APK: положи бинарник ffmpeg рядом с данными.")
+        return
     status_msg = await msg.reply_text("🎤 Слушаю...")
     transcribed = await transcribe_voice_message(msg.voice, msg, context)
     if not transcribed:

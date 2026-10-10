@@ -16,22 +16,21 @@ android {
         versionName = "1.0"
 
         ndk {
-            // Helio G96 = arm64. Оставляем только arm64 чтобы APK был меньше.
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            // Narzo 50 (Helio G96) = arm64. Только arm64-v8a чтобы APK был меньше.
+            abiFilters += listOf("arm64-v8a")
         }
 
         python {
             version = "3.11"
             pip {
-                install("openai==1.68.2")
-                install("python-telegram-bot==21.10")
-                install("duckduckgo_search==7.5.2")
+                // Только чистый Python: нативные/Rust-пакеты Chaquopy под Android
+                // собирает плохо. AI ходы идут через httpx, поиск — напрямую.
+                install("python-telegram-bot[job-queue]==21.10")
+                install("python-dotenv==1.1.0")
                 install("httpx==0.27.0")
+                install("pydub==0.25.1")
                 install("SpeechRecognition==3.11.0")
                 install("yt-dlp")
-                install("python-dotenv==1.1.0")
-                // pydub чистый python, ffmpeg берем нативным пакетом ниже
-                install("pydub==0.25.1")
             }
         }
     }
@@ -57,8 +56,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
-    // ffmpeg для музыки/голосовых (pydub + yt-dlp)
-    implementation("com.arthenica:mobile-ffmpeg-full:4.4.LTS")
+    // Без mobile-ffmpeg: это библиотека, а pydub/yt-dlp нужен ffmpeg-БИНАРНИК.
+    // Бинарник (arm64 static) кладётся в filesDir/ffmpeg, bot_main.py сам подхватит.
+    // Нет бинарника — чат работает полностью, музыка/голосовые отвечают заглушкой.
 }
 
 chaquopy {
