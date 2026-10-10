@@ -8,8 +8,9 @@ pkg upgrade -y
 pkg install -y python ffmpeg git tmux termux-api openssh
 
 # проект уже должен лежать в ~/jarvis-bot (git clone) — если скрипт запущен оттуда, просто продолжаем
-pip install --upgrade pip
-pip install -r requirements.txt
+# В Termux системный pip защищён (PEP 668): `pip install --upgrade pip` запрещён,
+# пакеты ставим с --break-system-packages. Телефон single-purpose, это ок.
+pip install --break-system-packages -r requirements.txt
 
 mkdir -p data logs
 
