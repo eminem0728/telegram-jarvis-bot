@@ -575,20 +575,35 @@ async def get_openai_response(query: str) -> str:
         return f"Ошибка AI: {e}"
 
 async def get_gemini_response(query: str) -> str:
+    # Чистый REST без пакета google-generativeai (он не собирается на Termux).
+    # Ключ бесплатно: https://aistudio.google.com/apikey, модель через GEMINI_MODEL.
+    import httpx
+    if not GEMINI_API_KEY:
+        return "Нет GEMINI_API_KEY. Получи бесплатно на https://aistudio.google.com/apikey и впиши в .env."
+    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     try:
-        import google.generativeai as genai
-    except ImportError:
-        return "Пакет google-generativeai не установлен (на телефоне он не собирается). Переключи AI_PROVIDER на opencode_zen."
-    genai.configure(api_key=GEMINI_API_KEY)
-    try:
-        model = genai.GenerativeModel("gemini-pro")
-        resp = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: model.generate_content(
-                f"Ты {BOT_NAME} — умный ассистент. Отвечай кратко, на русском. {query}"
-            ),
-        )
-        return resp.text
+        async with httpx.AsyncClient(timeout=30.0) as c:
+            r = await c.post(
+                url,
+                params={"key": GEMINI_API_KEY},
+                json={
+                    "contents": [
+                        {"parts": [{"text": f"Ты {BOT_NAME} — умный ассистент. Отвечай кратко, на русском. {query}"}]}
+                    ],
+                    "generationConfig": {"maxOutputTokens": ai_max_tokens(), "temperature": 0.7},
+                },
+            )
+            if r.status_code != 200:
+                logger.error(f"Gemini HTTP {r.status_code}: {r.text[:200]}")
+                return f"Ошибка Gemini: HTTP {r.status_code}."
+            data = r.json()
+            cands = data.get("candidates") or []
+            if not cands:
+                return "Gemini вернул пустой ответ."
+            parts = ((cands[0].get("content") or {}).get("parts") or [])
+            text = "".join(p.get("text", "") for p in parts).strip()
+            return text or "Gemini вернул пустой ответ."
     except Exception as e:
         logger.error(f"Gemini error: {e}")
         return f"Ошибка Gemini: {e}"
