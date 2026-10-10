@@ -467,15 +467,65 @@ async def download_music(query_or_url: str) -> dict | None:
     _cleanup_music_directory(temp_dir)
     return None
 
+async def _openai_chat(
+    base_url: str,
+    api_key: str,
+    model: str,
+    messages: list,
+    max_tokens: int,
+    temperature: float,
+    timeout: float = 30.0,
+) -> str:
+    """Минимальный клиент OpenAI-совместимого API на чистом httpx.
+
+    Пакет `openai` тянет Rust-зависимость `jiter`, которая не собирается
+    на телефоне (Termux/aarch64). Поэтому ходим в API напрямую.
+    """
+    import httpx
+    url = base_url.rstrip("/") + "/chat/completions"
+    last_error = "unknown"
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as c:
+                r = await c.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                    },
+                )
+                if r.status_code != 200:
+                    last_error = f"HTTP {r.status_code}: {r.text[:200]}"
+                    logger.warning(f"AI API attempt {attempt + 1} failed: {last_error}")
+                    continue
+                data = r.json()
+                choices = data.get("choices") or []
+                if not choices:
+                    last_error = "no choices in response"
+                    logger.warning(f"AI API attempt {attempt + 1} failed: {last_error}")
+                    continue
+                content = (choices[0].get("message") or {}).get("content")
+                if not isinstance(content, str) or not content.strip():
+                    last_error = "empty content"
+                    logger.warning(f"AI API attempt {attempt + 1} failed: {last_error}")
+                    continue
+                return content.strip()
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {e}"
+            logger.warning(f"AI API attempt {attempt + 1} failed: {last_error}")
+    raise RuntimeError(last_error)
+
 async def get_openai_response(query: str) -> str:
-    import openai
-    client = openai.AsyncOpenAI(
-        api_key=OPENAI_API_KEY,
-        timeout=30.0,
-        max_retries=1,
-    )
     try:
-        resp = await client.chat.completions.create(
+        return await _openai_chat(
+            base_url="https://api.openai.com/v1",
+            api_key=OPENAI_API_KEY,
             model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
             messages=[
                 {
@@ -491,13 +541,15 @@ async def get_openai_response(query: str) -> str:
             max_tokens=ai_max_tokens(),
             temperature=0.7,
         )
-        return resp.choices[0].message.content
     except Exception as e:
         logger.error(f"OpenAI error: {e}")
         return f"Ошибка AI: {e}"
 
 async def get_gemini_response(query: str) -> str:
-    import google.generativeai as genai
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        return "Пакет google-generativeai не установлен (на телефоне он не собирается). Переключи AI_PROVIDER на opencode_zen."
     genai.configure(api_key=GEMINI_API_KEY)
     try:
         model = genai.GenerativeModel("gemini-pro")
@@ -513,13 +565,6 @@ async def get_gemini_response(query: str) -> str:
         return f"Ошибка Gemini: {e}"
 
 async def get_opencode_zen_response(query: str, user_name: str = None, user_type: str = None, chat_id: int = None) -> str:
-    import openai
-    client = openai.AsyncOpenAI(
-        api_key=OPENCODE_ZEN_API_KEY,
-        base_url="https://opencode.ai/zen/v1",
-        timeout=30.0,
-        max_retries=0,
-    )
     greeting = f"Тебе пишет {user_name}. " if user_name else ""
     system_message = {
         "role": "system",
@@ -566,20 +611,14 @@ async def get_opencode_zen_response(query: str, user_name: str = None, user_type
     last_error = None
     for attempt, attempt_messages in enumerate(attempts, start=1):
         try:
-            resp = await client.chat.completions.create(
+            return await _openai_chat(
+                base_url="https://opencode.ai/zen/v1",
+                api_key=OPENCODE_ZEN_API_KEY,
                 model=model_name,
                 messages=attempt_messages,
                 max_tokens=ai_max_tokens(),
                 temperature=0.9,
             )
-            choices = getattr(resp, "choices", None)
-            if not choices:
-                raise ValueError("OpenCode Zen returned no choices")
-            message = getattr(choices[0], "message", None)
-            content = getattr(message, "content", None) if message else None
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError("OpenCode Zen returned empty content")
-            return content.strip()
         except Exception as e:
             last_error = e
             logger.warning(f"OpenCode Zen attempt {attempt} failed: {type(e).__name__}: {e}")
@@ -588,16 +627,46 @@ async def get_opencode_zen_response(query: str, user_name: str = None, user_type
     return "AI временно не ответил. Попробуй ещё раз через несколько секунд."
 
 async def get_web_response(query: str) -> str:
-    from duckduckgo_search import DDGS
+    # Без библиотеки duckduckgo_search: у неё Rust-зависимости, не собираются на телефоне.
+    # Дёргаем html-версию DuckDuckGo напрямую через httpx.
+    import html as _html
+    import httpx
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=4))
+        async with httpx.AsyncClient(
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0 (Linux; Android 13; RMX3286)"},
+            follow_redirects=True,
+        ) as c:
+            r = await c.get("https://html.duckduckgo.com/html/", params={"q": query})
+            if r.status_code != 200:
+                return "Ошибка при поиске в интернете."
+            page = r.text
+        results = []
+        for m in re.finditer(
+            r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>',
+            page, re.DOTALL,
+        ):
+            href, title, body = m.groups()
+            clean = lambda s: _html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
+            href = _html.unescape(href)
+            # DuckDuckGo заворачивает ссылки в свой редирект //duckduckgo.com/l/?uddg=...
+            # вытаскиваем прямой URL.
+            if "uddg=" in href:
+                try:
+                    from urllib.parse import urlparse, parse_qs, unquote
+                    q = parse_qs(urlparse(href).query).get("uddg", [href])[0]
+                    href = unquote(q)
+                except Exception:
+                    pass
+            results.append({"title": clean(title), "href": href, "body": clean(body)})
+            if len(results) >= 4:
+                break
         if not results:
             return "Ничего не нашёл по вашему запросу."
         lines = ["Вот что я нашёл:\n"]
-        for i, r in enumerate(results, 1):
-            lines.append(f"{i}. [{r['title']}]({r['href']})")
-            lines.append(f"   {r['body'][:200]}...\n")
+        for i, res in enumerate(results, 1):
+            lines.append(f"{i}. [{res['title']}]({res['href']})")
+            lines.append(f"   {res['body'][:200]}...\n")
         return "\n".join(lines)
     except Exception as e:
         logger.error(f"Web search error: {e}")

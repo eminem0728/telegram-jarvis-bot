@@ -1,9 +1,10 @@
 python-telegram-bot[job-queue]==21.10
 python-dotenv==1.1.0
-openai==1.68.2
-google-generativeai>=0.8.0
-duckduckgo_search==7.5.2
 httpx==0.27.0
 pydub==0.25.1
 SpeechRecognition==3.11.0
 yt-dlp>=2024.12.0
+# Убраны специально: openai (тянет Rust-пакет jiter), duckduckgo_search
+# (Rust-зависимости), google-generativeai (не собирается на Termux).
+# AI-ходы идут через httpx напрямую, поиск — через html.duckduckgo.com.
+# Нужен Gemini на ПК/сервере? pip install google-generativeai
