@@ -10,3 +10,7 @@ data/
 venv/
 # копия main.py внутри android-сборки всегда генерируется из корня
 android/app/src/main/python/main.py
+# локальные секреты для APK (ключи только на ПК сборщика)
+android/local.properties
+# служебное Android Studio
+.idea/

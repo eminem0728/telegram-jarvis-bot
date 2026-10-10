@@ -31,11 +31,11 @@ class MainActivity : AppCompatActivity() {
 
         val tokenField = EditText(this).apply {
             hint = "TELEGRAM_TOKEN"
-            setText(prefs.getString("token", ""))
+            setText(prefs.getString("token", "").ifNullOrEmpty { BuildConfig.TELEGRAM_TOKEN_DEFAULT })
         }
         val zenField = EditText(this).apply {
-            hint = "OPENCODE_ZEN_API_KEY"
-            setText(prefs.getString("zen", ""))
+            hint = "OPENCODE_ZEN_API_KEY / GEMINI_API_KEY"
+            setText(prefs.getString("zen", "").ifNullOrEmpty { BuildConfig.GEMINI_KEY_DEFAULT })
         }
         val btnOn = Button(this).apply { text = "▶ ВКЛЮЧИТЬ БОТА" }
         val btnOff = Button(this).apply { text = "■ ВЫКЛЮЧИТЬ" }

@@ -3,7 +3,7 @@ import os
 import sys
 
 
-def start_bot(base_dir: str, token: str, zen_key: str):
+def start_bot(base_dir: str, token: str, ai_key: str):
     data_dir = os.path.join(base_dir, "data")
     logs_dir = os.path.join(base_dir, "logs")
     os.makedirs(data_dir, exist_ok=True)
@@ -15,9 +15,14 @@ def start_bot(base_dir: str, token: str, zen_key: str):
     os.environ["PHONE_MODE"] = "1"
 
     os.environ["TELEGRAM_TOKEN"] = token or ""
-    if zen_key:
-        os.environ["OPENCODE_ZEN_API_KEY"] = zen_key
-    os.environ.setdefault("AI_PROVIDER", "opencode_zen")
+    # Ключ Zen начинается с sk-, ключ Gemini (AI Studio) — иначе.
+    if (ai_key or "").startswith("sk-"):
+        os.environ["AI_PROVIDER"] = "opencode_zen"
+        os.environ["OPENCODE_ZEN_API_KEY"] = ai_key
+    else:
+        os.environ["AI_PROVIDER"] = "gemini"
+        if ai_key:
+            os.environ["GEMINI_API_KEY"] = ai_key
 
     # ffmpeg: pydub и yt-dlp ищут БИНАРНИК в PATH. Если пользователь положил
     # static-сборку arm64 в filesDir/ffmpeg — подсовываем её первой.

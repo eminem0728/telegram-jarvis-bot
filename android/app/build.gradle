@@ -4,9 +4,23 @@ plugins {
     id("com.chaquo.python")
 }
 
+// Секреты для предзаполнения в APK берём из android/local.properties
+// (файл в .gitignore, на GitHub не уходит). Ключей нет — поля пустые.
+val localProps = java.util.Properties()
+val localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.inputStream().use { localProps.load(it) }
+}
+val jarvisTgToken: String = localProps.getProperty("jarvis.telegram.token", "")
+val jarvisGeminiKey: String = localProps.getProperty("jarvis.gemini.key", "")
+
 android {
     namespace = "com.jarvis.bot"
     compileSdk = 34
+
+    buildFeatures {
+        buildConfig = true
+    }
 
     defaultConfig {
         applicationId = "com.jarvis.bot"
@@ -14,6 +28,10 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        // Дефолтные ключи вшиваются в APK только со сборочной машины
+        buildConfigField("String", "TELEGRAM_TOKEN_DEFAULT", "\"$jarvisTgToken\"")
+        buildConfigField("String", "GEMINI_KEY_DEFAULT", "\"$jarvisGeminiKey\"")
 
         ndk {
             // Narzo 50 (Helio G96) = arm64. Только arm64-v8a чтобы APK был меньше.
